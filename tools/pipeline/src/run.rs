@@ -5,6 +5,7 @@ use crate::names::Graph;
 use crate::qlever::{self, Candidate};
 use crate::store::{self, ImageInfo, Names, Person, Pool, Skip, State};
 use crate::text::{first_token, is_name_label, normalize};
+use crate::upload;
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -102,6 +103,7 @@ pub fn run(args: &Args) -> Result<()> {
     let today = today();
     let crops_dir = args.out.join("crops");
     std::fs::create_dir_all(&crops_dir).context("create crops dir")?;
+    upload::clear_marker(&args.out)?;
 
     let mut state: State =
         store::read_json(&args.out.join("state.json"))?.unwrap_or_else(|| State::empty(&today));
@@ -243,6 +245,7 @@ pub fn run(args: &Args) -> Result<()> {
     };
     store::write_json(&args.out.join("names.json"), &names)?;
     append_pending(&args.out, &["names.json".to_string()])?;
+    upload::write_marker(&args.out)?;
 
     report.print(&pool, &names, &graph, &client, started);
     Ok(())
