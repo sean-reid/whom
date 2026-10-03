@@ -29,24 +29,32 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
   await page.fill("#guess", "Zzyzx");
   await page.keyboard.press("Enter");
   await expect(page.locator("#notice")).toHaveText("Not a name I know.");
-  await expect(page.locator("#guesses li")).toHaveCount(0);
+  await expect(page.locator("#guesses li, #latest li")).toHaveCount(0);
 
+  // Two names no fixture person carries, so the sorted list and the pinned row both appear
+  // before the win whichever person today's puzzle is.
+  const misses = ["Pierre", "Maria"];
   let rows = 0;
-  for (const person of pool.people) {
-    await page.fill("#guess", person.display);
+  for (const display of [...misses, ...pool.people.map((p) => p.display)]) {
+    await page.fill("#guess", display);
     await page.keyboard.press("Enter");
     rows += 1;
-    await expect(page.locator("#guesses li")).toHaveCount(rows);
+    await expect(page.locator("#guesses li, #latest li")).toHaveCount(rows);
     if (rows === 2) {
       await expect(page.locator("#facts li").first()).toHaveText(/^Born in the \d{4}s$/);
+      await expect(page.locator("#latest li .name")).toHaveText(display, {
+        ignoreCase: true,
+      });
       await page.reload();
-      await expect(page.locator("#guesses li")).toHaveCount(2);
+      await expect(page.locator("#guesses li")).toHaveCount(1);
+      await expect(page.locator("#latest li")).toHaveCount(1);
+      await page.screenshot({ path: info.outputPath("mid.png"), fullPage: true });
     }
     if (await page.locator("#end").isVisible()) break;
   }
   await expect(page.locator("#end")).toBeVisible();
   await expect(page.locator("#guess-form")).toBeHidden();
-  const winner = pool.people[rows - 1];
+  const winner = pool.people[rows - misses.length - 1];
   await expect(page.locator("#result")).toContainText(winner?.label ?? "");
   await expect(page.locator("#credit")).toContainText("via Wikimedia Commons");
   await expect(page.locator("#figures dd").first()).toHaveText("1");
@@ -61,4 +69,8 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
   await page.reload();
   await expect(page.locator("#end")).toBeVisible();
   await expect(page.locator("#guesses li")).toHaveCount(rows);
+  await expect(page.locator("#latest li")).toHaveCount(0);
+  await expect(page.locator("#guesses li .name").first()).toHaveText(winner?.display ?? "", {
+    ignoreCase: true,
+  });
 });

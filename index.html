@@ -39,7 +39,10 @@
       </figure>
       <p class="notice" id="notice" role="status" aria-live="polite"></p>
       <ul class="facts" id="facts" aria-label="Facts about this person" hidden></ul>
-      <ol class="guesses" id="guesses" aria-label="Your guesses"></ol>
+      <p class="caption" id="sorted-caption" hidden>Closest first</p>
+      <ol class="guesses" id="guesses" aria-label="Earlier guesses, closest first"></ol>
+      <p class="caption" id="latest-caption" hidden>Last guess</p>
+      <ol class="guesses latest" id="latest" aria-label="Your last guess"></ol>
       <form class="guess-form" id="guess-form" autocomplete="off" hidden>
         <div class="field">
           <label class="visually-hidden" for="guess">Your guess</label>
@@ -92,7 +95,8 @@
         is short for the other. Matches are in solid ink.
       </p>
       <p>
-        A fact about the person appears after guesses two, four, and six. A new face arrives at
+        Earlier guesses sort with the closest match first; your last guess stays by the input. A
+        fact about the person appears after guesses two, four, and six. A new face arrives at
         midnight, your time.
       </p>
       <form method="dialog">

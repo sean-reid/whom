@@ -9,7 +9,7 @@ import {
   renderFigures,
   renderRemaining,
   renderReveal,
-  renderRows,
+  renderGuesses,
 } from "./render.ts";
 import { copyText, shareLine } from "./share.ts";
 import {
@@ -30,7 +30,12 @@ const issue = $("issue");
 const portrait = $<HTMLImageElement>("portrait");
 const notice = $("notice");
 const facts = $("facts");
-const guesses = $("guesses");
+const lists = {
+  sorted: $("guesses"),
+  sortedCaption: $("sorted-caption"),
+  latest: $("latest"),
+  latestCaption: $("latest-caption"),
+};
 const form = $<HTMLFormElement>("guess-form");
 const input = $<HTMLInputElement>("guess");
 const submit = $<HTMLButtonElement>("submit");
@@ -51,7 +56,7 @@ function say(text: string) {
 function render() {
   if (!game) return;
   renderFacts(facts, game.facts, game.rows.length, game.done);
-  renderRows(guesses, game.rows);
+  renderGuesses(lists, game.rows, game.done);
   renderRemaining(remaining, MAX_GUESSES - game.rows.length, game.done);
   form.hidden = game.done;
   if (game.done && game.reveal) {
