@@ -1,0 +1,41 @@
+name: pipeline
+
+on:
+  schedule:
+    - cron: "0 6 1 1,4,7,10 *"
+  workflow_dispatch:
+    inputs:
+      max_fetch:
+        description: Most Commons image fetches this run
+        default: "4000"
+      sample:
+        description: Stop after this many new people (blank for a full run)
+        default: ""
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '860e267e26cbf52bdca301d114b3c203' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/pipeline
+      - run: cargo build --release --manifest-path tools/pipeline/Cargo.toml
+      - run: tools/pipeline/target/release/pipeline download --out out
+      - run: >
+          tools/pipeline/target/release/pipeline run --out out
+          --max-fetch "${{ inputs.max_fetch || '4000' }}"
+          ${{ inputs.sample && format('--sample {0}', inputs.sample) || '' }}
+      - run: tools/pipeline/target/release/pipeline upload --out out
