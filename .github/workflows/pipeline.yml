@@ -27,10 +27,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '860e267e26cbf52bdca301d114b3c203' }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tools/pipeline
+      - uses: ./.github/actions/setup-rust
       - run: cargo build --release --manifest-path tools/pipeline/Cargo.toml
       - env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -17,11 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/setup-node
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
@@ -35,11 +31,7 @@ jobs:
     needs: web
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/setup-node
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
         env:
@@ -58,12 +50,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tools/pipeline
       - run: cargo fmt --check --manifest-path tools/pipeline/Cargo.toml
       - run: cargo clippy --all-targets --manifest-path tools/pipeline/Cargo.toml -- -D warnings
       - run: cargo test --manifest-path tools/pipeline/Cargo.toml
