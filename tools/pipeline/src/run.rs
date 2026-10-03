@@ -37,6 +37,12 @@ pub fn today() -> String {
     time::OffsetDateTime::now_utc().date().to_string()
 }
 
+// A scan smaller than nine tenths of the pool is a truncated QLever answer, not a mass
+// departure of famous people, so it must not retire anyone.
+pub fn scan_is_complete(scanned: usize, pool_size: usize) -> bool {
+    scanned * 10 >= pool_size * 9
+}
+
 pub fn run(args: &Args) -> Result<()> {
     let started = Instant::now();
     let today = today();
@@ -56,8 +62,16 @@ pub fn run(args: &Args) -> Result<()> {
 
     let seen: BTreeSet<&str> = candidates.iter().map(|c| c.qid.as_str()).collect();
     if args.sample.is_none() {
-        for p in &mut pool.people {
-            p.retired = !seen.contains(p.qid.as_str());
+        if scan_is_complete(candidates.len(), pool.people.len()) {
+            for p in &mut pool.people {
+                p.retired = !seen.contains(p.qid.as_str());
+            }
+        } else {
+            println!(
+                "scan returned {} people against a pool of {}; skipping retirement",
+                candidates.len(),
+                pool.people.len()
+            );
         }
     }
     for c in &candidates {
@@ -489,5 +503,13 @@ mod tests {
         assert_eq!(forms, vec!["alan", "mathison"]);
         c.label = "Turing".into();
         assert_eq!(display_name(&c), "Mathison");
+    }
+
+    #[test]
+    fn a_short_scan_does_not_retire() {
+        assert!(scan_is_complete(0, 0));
+        assert!(scan_is_complete(9000, 10000));
+        assert!(!scan_is_complete(8999, 10000));
+        assert!(!scan_is_complete(2000, 11000));
     }
 }

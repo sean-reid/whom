@@ -17,7 +17,7 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
         /// Most Commons image fetches in one run.
-        #[arg(long, default_value_t = 4000)]
+        #[arg(long, default_value_t = 10000)]
         max_fetch: usize,
         /// Stop after this many new people; skips retirement.
         #[arg(long)]

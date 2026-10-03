@@ -1,8 +1,15 @@
 import { MAX_GUESSES } from "../shared/api.ts";
-import { localIsoDate, msUntilLocalMidnight, puzzleNumber, EPOCH } from "../shared/day.ts";
+import {
+  EPOCH,
+  localIsoDate,
+  msUntilLocalMidnight,
+  parseIsoDate,
+  puzzleNumber,
+} from "../shared/day.ts";
 import { ApiError, getNames, getPuzzle, getStats, postGuess } from "./api.ts";
 import {
   formatCountdown,
+  formatDate,
   formatIssue,
   renderDist,
   renderFacts,
@@ -51,6 +58,7 @@ let active = -1;
 
 function say(text: string) {
   notice.textContent = text;
+  if (text) notice.scrollIntoView({ block: "nearest" });
 }
 
 function render() {
@@ -60,6 +68,7 @@ function render() {
   renderRemaining(remaining, MAX_GUESSES - game.rows.length, game.done);
   form.hidden = game.done;
   if (game.done && game.reveal) {
+    portrait.alt = game.reveal.label;
     renderReveal($("result"), $("desc"), $("credit"), game.reveal, game.won, game.rows.length);
     renderFigures($("figures"), stats);
     const slot = game.won ? game.rows.length - 1 : MAX_GUESSES;
@@ -68,13 +77,17 @@ function render() {
     void getStats(game.n)
       .then((all) => renderDist($("dist"), $("dist-note"), stats.dist, all, slot))
       .catch(() => undefined);
-    tickCountdown();
+    tickCountdown(localIsoDate());
   }
 }
 
-function tickCountdown() {
+function tickCountdown(today: string) {
   const node = $("next");
   const update = () => {
+    if (localIsoDate() !== today) {
+      window.location.reload();
+      return;
+    }
     node.textContent = formatCountdown(msUntilLocalMidnight());
   };
   update();
@@ -83,6 +96,7 @@ function tickCountdown() {
 
 function closeSuggestions() {
   suggest.hidden = true;
+  input.removeAttribute("aria-activedescendant");
   suggest.replaceChildren();
   input.setAttribute("aria-expanded", "false");
   active = -1;
@@ -110,6 +124,7 @@ function showSuggestions() {
   });
   suggest.hidden = false;
   input.setAttribute("aria-expanded", "true");
+  suggest.scrollIntoView({ block: "nearest" });
   active = -1;
 }
 
@@ -182,7 +197,7 @@ async function start() {
   const n = puzzleNumber(today);
   if (n === null || n < 1) {
     issue.textContent = "";
-    say(`The first face arrives on ${EPOCH}.`);
+    say(`The first face arrives on ${formatDate(parseIsoDate(EPOCH) ?? 0)}.`);
     return;
   }
   issue.textContent = formatIssue(n, new Date());

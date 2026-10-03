@@ -19,5 +19,5 @@
   "ratelimits": [
     { "name": "GUESS_RATE", "namespace_id": "1", "simple": { "limit": 30, "period": 60 } },
   ],
-  // Secrets, set with `wrangler secret put`: SESSION_SECRET signs game tokens, PUZZLE_SEED orders the schedule.
+  // Secrets: SESSION_SECRET signs game tokens, PUZZLE_SEED orders the schedule. deploy.yml puts them; `npm run dev` passes dev values.
 }

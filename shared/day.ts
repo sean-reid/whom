@@ -1,4 +1,4 @@
-export const EPOCH = "2026-10-04";
+export const EPOCH = "2026-10-03";
 
 const DAY_MS = 86_400_000;
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;

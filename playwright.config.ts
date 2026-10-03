@@ -1,23 +1,10 @@
-import { readdirSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 const port = 8787;
 const apiPort = 8788;
 const vars = "--var SESSION_SECRET:e2e-session --var PUZZLE_SEED:e2e-seed";
 const states = [".wrangler/state", ".wrangler/state-api"];
-const fixtures = [
-  "pool.json",
-  "names.json",
-  ...readdirSync("tests/fixtures/crops").map((f) => `crops/${f}`),
-];
-const seed = states
-  .flatMap((state) =>
-    fixtures.map(
-      (f) =>
-        `npx wrangler r2 object put whom/${f} --file tests/fixtures/${f} --local --persist-to ${state}`,
-    ),
-  )
-  .join(" && ");
+const seed = states.map((state) => `node scripts/seed-local.mjs ${state}`).join(" && ");
 const dev = (p: number, state: string) =>
   `npx wrangler dev --port ${p} --ip 127.0.0.1 ${vars} --persist-to ${state}`;
 const api = /api\.spec\.ts$/;

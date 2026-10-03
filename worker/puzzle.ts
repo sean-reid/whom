@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
+import { RESULT_SLOTS } from "../shared/api.ts";
 import type { Env } from "./env.ts";
 
-const BUCKETS = 9;
+const BUCKETS = RESULT_SLOTS;
 
 export class Puzzle extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {

@@ -5,6 +5,7 @@ import type { NamesFile, PoolFile } from "../../shared/data";
 import { latestAllowedNumber, puzzleNumber } from "../../shared/day";
 import { normalizeName } from "../../shared/names";
 import { personForNumber, scheduleOrder } from "../../worker/schedule";
+import { signToken } from "../../worker/token";
 import names from "../fixtures/names.json" with { type: "json" };
 import pool from "../fixtures/pool.json" with { type: "json" };
 
@@ -155,6 +156,16 @@ test("a repeated guess is 422 and the right name wins with a reveal", async ({ r
   });
   const after = await stats(request);
   expect(after.counts[made - 1]).toBeGreaterThanOrEqual(1);
+});
+
+test("a token older than three days is refused", async ({ request }) => {
+  const stale = await signToken(
+    { n, nonce: "0".repeat(32), guesses: [], done: false, issued: Date.now() - 4 * DAY_MS },
+    "e2e-session",
+  );
+  const res = await guess(request, stale, "Pierre");
+  expect(res.status).toBe(400);
+  expect(res.body.error).toBe("bad token");
 });
 
 test("the crop is a jpeg for live numbers and 404 otherwise", async ({ request }) => {
