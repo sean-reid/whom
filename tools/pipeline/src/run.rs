@@ -116,24 +116,16 @@ pub fn run(args: &Args) -> Result<()> {
     let mut client = Client::new()?;
     let mut report = Report::default();
 
-    let candidates = scan(&mut client, &state, args.sample)?;
+    let candidates = scan_and_retire(
+        &mut client,
+        qlever::ENDPOINT,
+        &state,
+        &mut pool,
+        args.sample,
+    )?;
     report.scanned = candidates.len();
     println!("scanned {} people", candidates.len());
 
-    let seen: BTreeSet<&str> = candidates.iter().map(|c| c.qid.as_str()).collect();
-    if args.sample.is_none() {
-        if scan_is_complete(candidates.len(), pool.people.len()) {
-            for p in &mut pool.people {
-                p.retired = !seen.contains(p.qid.as_str());
-            }
-        } else {
-            println!(
-                "scan returned {} people against a pool of {}; skipping retirement",
-                candidates.len(),
-                pool.people.len()
-            );
-        }
-    }
     let index = pool.index();
     for c in &candidates {
         if let Some(&i) = index.get(&c.qid) {
@@ -251,9 +243,44 @@ pub fn run(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn scan(client: &mut Client, state: &State, sample: Option<usize>) -> Result<Vec<Candidate>> {
+// A sample run stops scanning early and so never retires anyone.
+fn scan_and_retire(
+    client: &mut Client,
+    endpoint: &str,
+    state: &State,
+    pool: &mut Pool,
+    sample: Option<usize>,
+) -> Result<Vec<Candidate>> {
+    let candidates = scan(client, endpoint, state, sample)?;
+    if sample.is_none() {
+        retire(pool, &candidates);
+    }
+    Ok(candidates)
+}
+
+fn retire(pool: &mut Pool, candidates: &[Candidate]) {
+    if !scan_is_complete(candidates.len(), pool.people.len()) {
+        println!(
+            "scan returned {} people against a pool of {}; skipping retirement",
+            candidates.len(),
+            pool.people.len()
+        );
+        return;
+    }
+    let seen: BTreeSet<&str> = candidates.iter().map(|c| c.qid.as_str()).collect();
+    for p in &mut pool.people {
+        p.retired = !seen.contains(p.qid.as_str());
+    }
+}
+
+fn scan(
+    client: &mut Client,
+    endpoint: &str,
+    state: &State,
+    sample: Option<usize>,
+) -> Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
-    qlever::paged(client, &qlever::pool_query(), |rows| {
+    qlever::paged(client, endpoint, &qlever::pool_query(), |rows| {
         candidates.extend(rows.iter().filter_map(qlever::candidate_from_row));
         Ok(match sample {
             Some(n) => {
@@ -487,6 +514,7 @@ fn append_pending(out: &Path, keys: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::http::testing::{response, serve};
 
     fn candidate() -> Candidate {
         Candidate {
@@ -574,5 +602,102 @@ mod tests {
         assert!(scan_is_complete(9000, 10000));
         assert!(!scan_is_complete(8999, 10000));
         assert!(!scan_is_complete(2000, 11000));
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people
+            .extend((1..=3000).map(|i| Person::stub(&format!("Q{i}"))));
+        let candidates: Vec<Candidate> = (1..=2003).map(candidate_n).collect();
+        retire(&mut pool, &candidates);
+        assert!(pool.people.iter().all(|p| !p.retired));
+    }
+
+    fn candidate_n(i: usize) -> Candidate {
+        let mut c = candidate();
+        c.qid = format!("Q{i}");
+        c
+    }
+
+    fn page(qids: std::ops::Range<usize>) -> String {
+        let rows: Vec<String> = qids
+            .map(|i| {
+                format!(
+                    concat!(
+                        r#"{{"p":{{"value":"http://www.wikidata.org/entity/Q{i}"}},"#,
+                        r#""label":{{"value":"Person {i}"}},"#,
+                        r#""img":{{"value":"http://commons.wikimedia.org/wiki/Special:FilePath/Q{i}.jpg"}},"#,
+                        r#""dob":{{"value":"1950-01-01T00:00:00Z"}}}}"#
+                    ),
+                    i = i
+                )
+            })
+            .collect();
+        response(
+            "200 OK",
+            &[("Content-Type", "application/sparql-results+json")],
+            &format!(r#"{{"results":{{"bindings":[{}]}}}}"#, rows.join(",")),
+        )
+    }
+
+    #[test]
+    fn a_full_scan_pages_until_a_short_page_and_retires_the_unseen() {
+        let (base, handle) = serve(vec![page(1..2001), page(2001..2004)]);
+        let mut client = Client::new().unwrap();
+        let state = State::empty("2026-01-01");
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people
+            .extend(["Q1", "Q2003", "Q5000"].map(Person::stub));
+        let candidates = scan_and_retire(&mut client, &base, &state, &mut pool, None).unwrap();
+        assert_eq!(candidates.len(), 2003);
+        assert_eq!(candidates[0].qid, "Q1");
+        assert_eq!(candidates[2002].label, "Person 2003");
+        assert_eq!(client.requests, 2);
+        let lines = handle.join().unwrap();
+        assert!(
+            lines[0].ends_with("LIMIT+2000+OFFSET+0 HTTP/1.1"),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[1].ends_with("LIMIT+2000+OFFSET+2000 HTTP/1.1"),
+            "{}",
+            lines[1]
+        );
+        let retired: Vec<&str> = pool
+            .people
+            .iter()
+            .filter(|p| p.retired)
+            .map(|p| p.qid.as_str())
+            .collect();
+        assert_eq!(retired, ["Q5000"]);
+    }
+
+    #[test]
+    fn a_sample_scan_stops_early_and_retires_nobody() {
+        let (base, handle) = serve(vec![page(1..2001)]);
+        let mut client = Client::new().unwrap();
+        let state = State::empty("2026-01-01");
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(Person::stub("Q5000"));
+        let candidates = scan_and_retire(&mut client, &base, &state, &mut pool, Some(5)).unwrap();
+        assert_eq!(candidates.len(), 2000);
+        assert_eq!(client.requests, 1);
+        assert!(!pool.people[0].retired);
+        assert_eq!(handle.join().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_page_retires_nobody() {
+        let (base, handle) = serve(vec![
+            page(1..2001),
+            response("200 OK", &[], r#"{"results":{}}"#),
+        ]);
+        let mut client = Client::new().unwrap();
+        let state = State::empty("2026-01-01");
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(Person::stub("Q5000"));
+        let err = scan_and_retire(&mut client, &base, &state, &mut pool, None).unwrap_err();
+        assert!(err.to_string().contains("without bindings"), "{err}");
+        assert_eq!(client.requests, 2);
+        assert!(!pool.people[0].retired);
+        assert_eq!(handle.join().unwrap().len(), 2);
     }
 }

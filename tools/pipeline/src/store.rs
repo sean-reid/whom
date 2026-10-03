@@ -66,6 +66,32 @@ pub struct Person {
     pub retired: bool,
 }
 
+impl Person {
+    #[cfg(test)]
+    pub fn stub(qid: &str) -> Person {
+        Person {
+            qid: qid.to_string(),
+            label: String::new(),
+            display: String::new(),
+            names: vec![],
+            born: 0,
+            citizenship: vec![],
+            occupations: vec![],
+            description: None,
+            wiki: None,
+            crop: String::new(),
+            image: ImageInfo {
+                file: String::new(),
+                artist: None,
+                licence: String::new(),
+                licence_url: None,
+                page_url: String::new(),
+            },
+            retired: false,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Pool {
     pub version: u32,
@@ -295,28 +321,7 @@ mod tests {
 
     fn pool_of(qids: &[&str]) -> Pool {
         let mut pool = Pool::empty("2026-01-01");
-        for q in qids {
-            pool.people.push(Person {
-                qid: q.to_string(),
-                label: String::new(),
-                display: String::new(),
-                names: vec![],
-                born: 0,
-                citizenship: vec![],
-                occupations: vec![],
-                description: None,
-                wiki: None,
-                crop: String::new(),
-                image: ImageInfo {
-                    file: String::new(),
-                    artist: None,
-                    licence: String::new(),
-                    licence_url: None,
-                    page_url: String::new(),
-                },
-                retired: false,
-            });
-        }
+        pool.people.extend(qids.iter().map(|q| Person::stub(q)));
         pool
     }
 

@@ -34,10 +34,10 @@ pub struct Candidate {
     pub occupations: Vec<String>,
 }
 
-pub fn query(client: &mut Client, sparql: &str) -> Result<Vec<Row>> {
+pub fn query(client: &mut Client, endpoint: &str, sparql: &str) -> Result<Vec<Row>> {
     let full = format!("{PREFIXES}{sparql}");
     let resp = client
-        .send(ENDPOINT, |c, u| {
+        .send(endpoint, |c, u| {
             c.get(u)
                 .query(&[("query", full.as_str())])
                 .header("Accept", "application/sparql-results+json")
@@ -66,14 +66,14 @@ pub fn query(client: &mut Client, sparql: &str) -> Result<Vec<Row>> {
         .collect())
 }
 
-pub fn paged<F>(client: &mut Client, body: &str, mut on_page: F) -> Result<()>
+pub fn paged<F>(client: &mut Client, endpoint: &str, body: &str, mut on_page: F) -> Result<()>
 where
     F: FnMut(Vec<Row>) -> Result<bool>,
 {
     let mut offset = 0;
     loop {
         let sparql = format!("{body}\nLIMIT {PAGE} OFFSET {offset}");
-        let rows = query(client, &sparql)?;
+        let rows = query(client, endpoint, &sparql)?;
         let n = rows.len();
         let keep_going = on_page(rows)?;
         if n < PAGE || !keep_going {
@@ -290,7 +290,7 @@ pub fn birth_years(client: &mut Client, qids: &[String]) -> Result<Vec<BirthYear
     let mut out = Vec::new();
     for chunk in qids.chunks(YEARS_BATCH) {
         let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
-        for row in query(client, &birth_years_query(&refs))? {
+        for row in query(client, ENDPOINT, &birth_years_query(&refs))? {
             let (Some(gn), Some(y), Some(n)) = (row.get("gn"), row.get("y"), row.get("n")) else {
                 continue;
             };
@@ -309,7 +309,7 @@ pub fn birth_years(client: &mut Client, qids: &[String]) -> Result<Vec<BirthYear
 
 pub fn common_given_names(client: &mut Client) -> Result<Vec<GivenName>> {
     let mut out = Vec::new();
-    paged(client, &common_given_names_query(), |rows| {
+    paged(client, ENDPOINT, &common_given_names_query(), |rows| {
         out.extend(rows.iter().filter_map(given_name_from_row));
         Ok(true)
     })?;
@@ -320,7 +320,7 @@ pub fn given_names_by_id(client: &mut Client, qids: &[String]) -> Result<Vec<Giv
     let mut out = Vec::new();
     for chunk in qids.chunks(VALUES_BATCH) {
         let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
-        let rows = query(client, &given_names_by_id_query(&refs))?;
+        let rows = query(client, ENDPOINT, &given_names_by_id_query(&refs))?;
         out.extend(rows.iter().filter_map(given_name_from_row));
     }
     Ok(out)
@@ -330,7 +330,7 @@ pub fn labels(client: &mut Client, qids: &[String]) -> Result<BTreeMap<String, S
     let mut out = BTreeMap::new();
     for chunk in qids.chunks(VALUES_BATCH) {
         let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
-        for row in query(client, &labels_query(&refs))? {
+        for row in query(client, ENDPOINT, &labels_query(&refs))? {
             if let (Some(item), Some(label)) = (row.get("item"), row.get("label")) {
                 out.insert(qid_of(item).to_string(), label.clone());
             }
