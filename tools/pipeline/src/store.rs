@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +92,14 @@ impl Pool {
     pub fn sort(&mut self) {
         self.people.sort_by_key(|p| qid_order(&p.qid));
     }
+
+    pub fn index(&self) -> HashMap<String, usize> {
+        self.people
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.qid.clone(), i))
+            .collect()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -143,6 +151,15 @@ impl State {
             None => true,
             Some(reason) => reason == Skip::FetchError.as_str(),
         }
+    }
+
+    // state.json is written more often than pool.json, so a run killed between
+    // the two can list people the pool never received; they are fetched again.
+    pub fn reconcile(&mut self, pool: &Pool) -> usize {
+        let index = pool.index();
+        let before = self.processed.len();
+        self.processed.retain(|q| index.contains_key(q));
+        before - self.processed.len()
     }
 
     pub fn mark_processed(&mut self, qid: &str) {
@@ -276,12 +293,11 @@ mod tests {
             .contains(r#""retired":true"#));
     }
 
-    #[test]
-    fn pool_sorts_by_numeric_qid() {
+    fn pool_of(qids: &[&str]) -> Pool {
         let mut pool = Pool::empty("2026-01-01");
-        for q in ["Q100", "Q9", "Q42"] {
+        for q in qids {
             pool.people.push(Person {
-                qid: q.into(),
+                qid: q.to_string(),
                 label: String::new(),
                 display: String::new(),
                 names: vec![],
@@ -301,8 +317,32 @@ mod tests {
                 retired: false,
             });
         }
+        pool
+    }
+
+    #[test]
+    fn pool_sorts_by_numeric_qid() {
+        let mut pool = pool_of(&["Q100", "Q9", "Q42"]);
         pool.sort();
         let order: Vec<&str> = pool.people.iter().map(|p| p.qid.as_str()).collect();
         assert_eq!(order, ["Q9", "Q42", "Q100"]);
+        let index = pool.index();
+        assert_eq!(index["Q42"], 1);
+        assert_eq!(index.len(), 3);
+    }
+
+    #[test]
+    fn processed_people_missing_from_the_pool_are_fetched_again() {
+        let pool = pool_of(&["Q9", "Q42"]);
+        let mut s = State::empty("2026-01-01");
+        s.mark_processed("Q9");
+        s.mark_processed("Q42");
+        s.mark_processed("Q100");
+        s.mark_skipped("Q7", Skip::NoFace);
+        assert_eq!(s.reconcile(&pool), 1);
+        assert!(!s.needs_fetch("Q9"));
+        assert!(s.needs_fetch("Q100"));
+        assert!(!s.needs_fetch("Q7"));
+        assert_eq!(s.reconcile(&pool), 0);
     }
 }

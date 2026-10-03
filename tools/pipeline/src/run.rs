@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 pub const PENDING_UPLOADS: &str = "pending-uploads.txt";
-const SAVE_EVERY: usize = 25;
+const SAVE_STATE_EVERY: usize = 25;
+const SAVE_POOL_EVERY: usize = 200;
 
 pub struct Args {
     pub out: PathBuf,
@@ -106,6 +107,10 @@ pub fn run(args: &Args) -> Result<()> {
         store::read_json(&args.out.join("state.json"))?.unwrap_or_else(|| State::empty(&today));
     let mut pool: Pool =
         store::read_json(&args.out.join("pool.json"))?.unwrap_or_else(|| Pool::empty(&today));
+    let orphaned = state.reconcile(&pool);
+    if orphaned > 0 {
+        println!("{orphaned} processed people are missing from the pool; fetching them again");
+    }
     let mut client = Client::new()?;
     let mut report = Report::default();
 
@@ -127,9 +132,10 @@ pub fn run(args: &Args) -> Result<()> {
             );
         }
     }
+    let index = pool.index();
     for c in &candidates {
-        if let Some(p) = pool.people.iter_mut().find(|p| p.qid == c.qid) {
-            p.update_from(c);
+        if let Some(&i) = index.get(&c.qid) {
+            pool.people[i].update_from(c);
         }
     }
 
@@ -170,8 +176,12 @@ pub fn run(args: &Args) -> Result<()> {
             let licences = commons::licences(&mut client, &files)?;
             for c in chunk {
                 handled += 1;
-                if handled % SAVE_EVERY == 0 {
-                    save(&args.out, &mut pool, &state, &today)?;
+                let (state_due, pool_due) = saves_due(handled);
+                if state_due {
+                    save_state(&args.out, &state, &today)?;
+                }
+                if pool_due {
+                    save_pool(&args.out, &mut pool, &today)?;
                 }
                 let licence = match licences.get(&c.file) {
                     Some(FileStatus::Licensed(l)) => l.clone(),
@@ -214,7 +224,8 @@ pub fn run(args: &Args) -> Result<()> {
         }
         Ok(())
     })();
-    save(&args.out, &mut pool, &state, &today)?;
+    save_state(&args.out, &state, &today)?;
+    save_pool(&args.out, &mut pool, &today)?;
     append_pending(&args.out, &pending)?;
     if let Err(e) = outcome {
         bail!("run stopped: {e}");
@@ -431,18 +442,28 @@ fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Re
     Ok(graph)
 }
 
-fn save(out: &Path, pool: &mut Pool, state: &State, today: &str) -> Result<()> {
+// pool.json is around 5 MB at full size, state.json a tenth of that.
+fn saves_due(handled: usize) -> (bool, bool) {
+    (
+        handled.is_multiple_of(SAVE_STATE_EVERY),
+        handled.is_multiple_of(SAVE_POOL_EVERY),
+    )
+}
+
+fn save_pool(out: &Path, pool: &mut Pool, today: &str) -> Result<()> {
     pool.generated = today.to_string();
     pool.sort();
-    store::write_json(&out.join("pool.json"), pool)?;
+    store::write_json(&out.join("pool.json"), pool)
+}
+
+fn save_state(out: &Path, state: &State, today: &str) -> Result<()> {
     let state_out = State {
         version: 1,
         last_run: today.to_string(),
         processed: state.processed.clone(),
         skipped: state.skipped.clone(),
     };
-    store::write_json(&out.join("state.json"), &state_out)?;
-    Ok(())
+    store::write_json(&out.join("state.json"), &state_out)
 }
 
 fn append_pending(out: &Path, keys: &[String]) -> Result<()> {
@@ -533,6 +554,15 @@ mod tests {
         assert_eq!(display_name(&c), "Pelé");
         c.givens = vec![("Q1".into(), ".".into())];
         assert_eq!(name_keys(&c), vec!["pele"]);
+    }
+
+    #[test]
+    fn state_saves_every_25_and_the_pool_every_200() {
+        assert_eq!(saves_due(24), (false, false));
+        assert_eq!(saves_due(25), (true, false));
+        assert_eq!(saves_due(175), (true, false));
+        assert_eq!(saves_due(200), (true, true));
+        assert_eq!(saves_due(401), (false, false));
     }
 
     #[test]
