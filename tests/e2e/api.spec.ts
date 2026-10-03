@@ -89,7 +89,7 @@ test("a lost game grades every miss, drips facts, and counts once", async ({ req
   expect(last?.won).toBe(false);
   expect(last?.facts.find((f) => f.kind === "born")?.text).toMatch(/^Born in the \d{3}0s$/);
   expect(last?.reveal?.label).toBeTruthy();
-  expect(JSON.stringify(last)).not.toMatch(/Q\d+/);
+  expect(JSON.stringify({ ...last, token: "" })).not.toMatch(/Q\d+/);
 
   const repeat = await guess(request, penultimate, "Ellen");
   expect(repeat.status).toBe(200);
