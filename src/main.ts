@@ -8,6 +8,7 @@ import {
 } from "../shared/day.ts";
 import { ApiError, getNames, getPuzzle, getStats, postGuess } from "./api.ts";
 import {
+  announceRow,
   formatCountdown,
   formatDate,
   formatIssue,
@@ -36,6 +37,7 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const issue = $("issue");
 const portrait = $<HTMLImageElement>("portrait");
 const notice = $("notice");
+const announce = $("announce");
 const facts = $("facts");
 const lists = {
   sorted: $("guesses"),
@@ -59,6 +61,15 @@ let active = -1;
 function say(text: string) {
   notice.textContent = text;
   if (text) notice.scrollIntoView({ block: "nearest" });
+}
+
+function offerRetry() {
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "Retry";
+  retry.addEventListener("click", () => void start());
+  notice.replaceChildren("No face right now.", retry);
+  notice.scrollIntoView({ block: "nearest" });
 }
 
 function render() {
@@ -174,6 +185,8 @@ async function guess() {
     saveGame(game);
     input.value = "";
     render();
+    if (game.done) end.focus();
+    else announce.textContent = announceRow(row, MAX_GUESSES - game.rows.length);
   } catch (err) {
     if (err instanceof ApiError && err.status === 422) {
       say(err.message === "already guessed" ? "You already tried that one." : "Not a name I know.");
@@ -205,14 +218,16 @@ async function start() {
   portrait.hidden = false;
   game = loadGame(n);
   if (!game) {
+    say("Loading today's face");
     try {
       const res = await getPuzzle(today);
       game = { n: res.n, token: res.token, rows: [], facts: [], done: false, won: false };
       saveGame(game);
     } catch {
-      say("No face right now. Try again in a moment.");
+      offerRetry();
       return;
     }
+    say("");
   }
   form.hidden = game.done;
   render();
@@ -228,7 +243,11 @@ form.addEventListener("submit", (event) => {
 });
 input.addEventListener("focus", () => void loadNames());
 input.addEventListener("input", showSuggestions);
-input.addEventListener("blur", () => window.setTimeout(closeSuggestions, 100));
+input.addEventListener("blur", () => {
+  window.setTimeout(() => {
+    if (document.activeElement !== input) closeSuggestions();
+  }, 100);
+});
 input.addEventListener("keydown", (event) => {
   if (suggest.hidden) return;
   if (event.key === "ArrowDown") {

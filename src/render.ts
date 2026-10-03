@@ -74,8 +74,18 @@ export function renderGuesses(lists: GuessLists, rows: Row[], done: boolean) {
   lists.latestCaption.hidden = done || !last || earlier.length === 0;
 }
 
+export function remainingText(left: number): string {
+  return left === 1 ? "1 guess left" : `${left} guesses left`;
+}
+
 export function renderRemaining(node: HTMLElement, left: number, done: boolean) {
-  node.textContent = done ? "" : left === 1 ? "1 guess left" : `${left} guesses left`;
+  node.textContent = done ? "" : remainingText(left);
+}
+
+export function announceRow(row: Row, left: number): string {
+  const parts = row.phrases.map((p) => p.text);
+  if (row.hint) parts.push(row.hint);
+  return `${parts.join(", ")}. ${remainingText(left)}`;
 }
 
 export function resultText(won: boolean, guesses: number, reveal: Reveal): string {
@@ -136,6 +146,12 @@ export function renderFigures(dl: HTMLElement, stats: Stats) {
   }
 }
 
+export function distSentence(slot: number, mine: number, all: number | null): string {
+  const outcome = slot === MAX_GUESSES ? "Lost" : `Won in ${slot + 1}`;
+  const yours = `${mine} of your games`;
+  return all === null ? `${outcome}: ${yours}` : `${outcome}: ${yours}, ${all} of everyone's`;
+}
+
 export function renderDist(
   grid: HTMLElement,
   note: HTMLElement,
@@ -148,7 +164,11 @@ export function renderDist(
   const maxMine = Math.max(1, ...mine);
   const maxAll = Math.max(1, ...allCounts);
   for (let i = 0; i <= MAX_GUESSES; i++) {
-    const label = el("span", "label", i === MAX_GUESSES ? "X" : String(i + 1));
+    const label = el(
+      "span",
+      i === slot ? "label mine" : "label",
+      i === MAX_GUESSES ? "X" : String(i + 1),
+    );
     const bars = el("div", "bars");
     const my = el("div", mine[i] ? "bar some" : "bar");
     my.style.width = `${(100 * (mine[i] ?? 0)) / maxMine}%`;
@@ -156,11 +176,10 @@ export function renderDist(
     everyone.style.width = `${(100 * (allCounts[i] ?? 0)) / maxAll}%`;
     bars.append(my, everyone);
     const count = el("span", "count", String(mine[i] ?? 0));
-    if (i === slot) {
-      label.className = "label mine";
-      count.className = "count mine";
-    }
-    grid.append(label, bars, count);
+    if (all) count.append(el("span", "all", String(allCounts[i] ?? 0)));
+    for (const node of [label, bars, count]) node.setAttribute("aria-hidden", "true");
+    const reading = distSentence(i, mine[i] ?? 0, all ? (allCounts[i] ?? 0) : null);
+    grid.append(label, bars, count, el("span", "visually-hidden", reading));
   }
   const total = all?.total ?? 0;
   note.textContent = total
