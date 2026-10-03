@@ -2,17 +2,29 @@ import { readdirSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 const port = 8787;
+const apiPort = 8788;
+const vars = "--var SESSION_SECRET:e2e-session --var PUZZLE_SEED:e2e-seed";
+const states = [".wrangler/state", ".wrangler/state-api"];
 const fixtures = [
   "pool.json",
   "names.json",
   ...readdirSync("tests/fixtures/crops").map((f) => `crops/${f}`),
 ];
-const seed = fixtures
-  .map((f) => `npx wrangler r2 object put whom/${f} --file tests/fixtures/${f} --local`)
+const seed = states
+  .flatMap((state) =>
+    fixtures.map(
+      (f) =>
+        `npx wrangler r2 object put whom/${f} --file tests/fixtures/${f} --local --persist-to ${state}`,
+    ),
+  )
   .join(" && ");
-const dev = `npx wrangler dev --port ${port} --ip 127.0.0.1 --var SESSION_SECRET:e2e-session --var PUZZLE_SEED:e2e-seed`;
+const dev = (p: number, state: string) =>
+  `npx wrangler dev --port ${p} --ip 127.0.0.1 ${vars} --persist-to ${state}`;
 const api = /api\.spec\.ts$/;
 
+// Servers start before any setup hook, so the first one builds and seeds both local R2
+// stores. The API suite gets its own Worker so its rate-limit case never eats the budget
+// the browser suites play against.
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
@@ -25,7 +37,6 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [
-    { name: "api", testMatch: api },
     {
       name: "mobile",
       testIgnore: api,
@@ -46,11 +57,20 @@ export default defineConfig({
       testIgnore: api,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },
+    { name: "api", testMatch: api, use: { baseURL: `http://127.0.0.1:${apiPort}` } },
   ],
-  webServer: {
-    command: `npm run build && ${seed} && ${dev}`,
-    url: `http://127.0.0.1:${port}/`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-  },
+  webServer: [
+    {
+      command: `npm run build && ${seed} && ${dev(port, states[0] ?? "")}`,
+      url: `http://127.0.0.1:${port}/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+    {
+      command: dev(apiPort, states[1] ?? ""),
+      url: `http://127.0.0.1:${apiPort}/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+  ],
 });

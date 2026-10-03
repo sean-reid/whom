@@ -34,11 +34,70 @@
     </header>
     <main id="main">
       <p class="lede">One famous face. Eight guesses at the first name.</p>
+      <figure class="portrait">
+        <img id="portrait" width="512" height="512" alt="Today's face" hidden />
+      </figure>
+      <p class="notice" id="notice" role="status" aria-live="polite"></p>
+      <ul class="facts" id="facts" aria-label="Facts about this person" hidden></ul>
+      <ol class="guesses" id="guesses" aria-label="Your guesses"></ol>
+      <form class="guess-form" id="guess-form" autocomplete="off" hidden>
+        <div class="field">
+          <label class="visually-hidden" for="guess">Your guess</label>
+          <input
+            id="guess"
+            name="guess"
+            type="text"
+            placeholder="First name"
+            spellcheck="false"
+            autocapitalize="words"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="suggest"
+          />
+          <ul class="suggest" id="suggest" role="listbox" aria-label="Matching names" hidden></ul>
+        </div>
+        <button type="submit" id="submit">Guess</button>
+      </form>
+      <p class="remaining" id="remaining"></p>
+      <section class="end" id="end" aria-label="Result" hidden>
+        <p class="result" id="result"></p>
+        <p class="desc" id="desc"></p>
+        <p class="credit" id="credit"></p>
+        <dl class="figures" id="figures"></dl>
+        <div class="dist" id="dist"></div>
+        <p class="dist-note" id="dist-note"></p>
+        <p class="share-row">
+          <button type="button" id="share">Share</button>
+          <span class="share-done" id="share-done" role="status"></span>
+          <span class="next" id="next"></span>
+        </p>
+      </section>
     </main>
     <footer class="colophon">
+      <button type="button" class="link" id="help-button">How to play</button>
       <a href="https://github.com/sean-reid/whom">Source</a>
       <a href="https://www.wikidata.org/">Wikidata</a>
     </footer>
+    <dialog id="help" class="sheet" aria-labelledby="help-title">
+      <h2 id="help-title">How to play</h2>
+      <p>
+        The face is a real person with a Wikipedia article in forty or more languages, born since
+        1900. Type a first name and press Guess. You get eight.
+      </p>
+      <p>
+        After each miss, one line says how your name compares with the answer: how long it is, where
+        it starts in the alphabet, which languages use it, how it sounds, and how common it is.
+        Matches are in solid ink.
+      </p>
+      <p>
+        A fact about the person appears after guesses two, four, and six. A new face arrives at
+        midnight, your time.
+      </p>
+      <form method="dialog">
+        <button type="submit">Play</button>
+      </form>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
