@@ -243,7 +243,11 @@ form.addEventListener("submit", (event) => {
 });
 input.addEventListener("focus", () => void loadNames());
 input.addEventListener("input", showSuggestions);
-input.addEventListener("blur", () => window.setTimeout(closeSuggestions, 100));
+input.addEventListener("blur", () => {
+  window.setTimeout(() => {
+    if (document.activeElement !== input) closeSuggestions();
+  }, 100);
+});
 input.addEventListener("keydown", (event) => {
   if (suggest.hidden) return;
   if (event.key === "ArrowDown") {
