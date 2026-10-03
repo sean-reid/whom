@@ -2,16 +2,13 @@ import { expect, test, type APIRequestContext, type APIResponse } from "@playwri
 import { MAX_GUESSES } from "../../shared/api";
 import type { GuessResponse, PuzzleResponse, StatsResponse } from "../../shared/api";
 import type { NamesFile, Person, PoolFile } from "../../shared/data";
-import { latestAllowedNumber, puzzleNumber } from "../../shared/day";
+import { DAY_MS, latestAllowedNumber, puzzleNumber } from "../../shared/day";
 import { normalizeName } from "../../shared/names";
 import { personForNumber, scheduleOrder } from "../../worker/schedule";
 import { signToken } from "../../worker/token";
 import names from "../fixtures/names.json" with { type: "json" };
 import pool from "../fixtures/pool.json" with { type: "json" };
-
-// The seed matches the --var in playwright.config.ts, so the suite can work out today's answer.
-const SEED = "e2e-seed";
-const DAY_MS = 86_400_000;
+import { E2E_SEED, flipSignature } from "./helpers";
 
 // Today in UTC, or tomorrow when today sits before the epoch.
 function playableDate(): string {
@@ -42,7 +39,7 @@ function rootPartner(answer: string): string | undefined {
 // The answer the Worker pins for n, since nothing earlier is pinned in a fresh state.
 let answer: Person;
 test.beforeAll(async () => {
-  answer = personForNumber(await scheduleOrder((pool as PoolFile).people, SEED), n);
+  answer = personForNumber(await scheduleOrder((pool as PoolFile).people, E2E_SEED), n);
 });
 
 interface Client {
@@ -98,9 +95,7 @@ test("an unknown name is 422 and a tampered token is 400", async ({ request }) =
   const unknown = await guess(me, token, "Zebedee");
   expect(unknown.status).toBe(422);
   expect(unknown.body.error).toBe("unknown name");
-  const [body, sig = ""] = token.split(".");
-  const flipped = (sig[0] === "A" ? "B" : "A") + sig.slice(1);
-  const tampered = await guess(me, `${body}.${flipped}`, "Pierre");
+  const tampered = await guess(me, flipSignature(token), "Pierre");
   expect(tampered.status).toBe(400);
   expect(tampered.body.error).toBe("bad token");
 });
