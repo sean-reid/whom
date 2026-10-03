@@ -123,11 +123,13 @@ pub fn run(args: &Args) -> Result<()> {
                     continue;
                 }
                 fetched += 1;
-                let reason = match fetch_and_crop(&mut client, &mut detector, c, &crops_dir) {
-                    Ok(()) => None,
-                    Err(Step::Skip(reason)) => Some(reason),
-                    Err(Step::Fatal(e)) => return Err(e),
-                };
+                let reason =
+                    match fetch_and_crop(&mut client, &mut detector, c, &licence.thumb, &crops_dir)
+                    {
+                        Ok(()) => None,
+                        Err(Step::Skip(reason)) => Some(reason),
+                        Err(Step::Fatal(e)) => return Err(e),
+                    };
                 match reason {
                     Some(reason) => {
                         state.mark_skipped(&c.qid, &reason);
@@ -222,9 +224,10 @@ fn fetch_and_crop(
     client: &mut Client,
     detector: &mut FaceDetector,
     c: &Candidate,
+    thumb_url: &str,
     crops_dir: &Path,
 ) -> Result<(), Step> {
-    let thumb = match commons::fetch_thumb(client, &c.file) {
+    let thumb = match commons::fetch_thumb(client, thumb_url) {
         Ok(t) => t,
         Err(FetchError::NotFound) => return Err(Step::Skip("missing-file".into())),
         Err(FetchError::Transient(e)) => {

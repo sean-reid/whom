@@ -25,6 +25,7 @@ pub struct Licence {
     pub short_name: String,
     pub url: Option<String>,
     pub artist: Option<String>,
+    pub thumb: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,13 +39,6 @@ pub fn page_url(file: &str) -> String {
     format!(
         "https://commons.wikimedia.org/wiki/File:{}",
         utf8_percent_encode(&file.replace(' ', "_"), PATH_SET)
-    )
-}
-
-pub fn thumb_url(file: &str) -> String {
-    format!(
-        "https://commons.wikimedia.org/wiki/Special:FilePath/{}?width={THUMB_WIDTH}",
-        utf8_percent_encode(file, PATH_SET)
     )
 }
 
@@ -72,7 +66,8 @@ pub fn licences(client: &mut Client, files: &[String]) -> Result<BTreeMap<String
                 c.get(u).query(&[
                     ("action", "query"),
                     ("prop", "imageinfo"),
-                    ("iiprop", "extmetadata"),
+                    ("iiprop", "extmetadata|url"),
+                    ("iiurlwidth", &THUMB_WIDTH.to_string()),
                     ("format", "json"),
                     ("formatversion", "2"),
                     ("titles", joined.as_str()),
@@ -120,8 +115,8 @@ pub fn parse_imageinfo(body: &Value) -> BTreeMap<String, FileStatus> {
         let status = if page.get("missing").is_some() {
             FileStatus::Missing
         } else {
-            match page.pointer("/imageinfo/0/extmetadata") {
-                Some(meta) => status_from_metadata(meta),
+            match page.pointer("/imageinfo/0") {
+                Some(info) => status_from_imageinfo(info),
                 None => FileStatus::Missing,
             }
         };
@@ -142,7 +137,17 @@ fn meta_value<'a>(meta: &'a Value, key: &str) -> Option<&'a str> {
         .and_then(Value::as_str)
 }
 
-fn status_from_metadata(meta: &Value) -> FileStatus {
+fn status_from_imageinfo(info: &Value) -> FileStatus {
+    let Some(thumb) = info
+        .get("thumburl")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    else {
+        return FileStatus::Missing;
+    };
+    let Some(meta) = info.get("extmetadata") else {
+        return FileStatus::Rejected("licence".into());
+    };
     let Some(short) = meta_value(meta, "LicenseShortName")
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -161,6 +166,7 @@ fn status_from_metadata(meta: &Value) -> FileStatus {
             .map(str::to_string)
             .filter(|s| !s.is_empty()),
         artist,
+        thumb: thumb.to_string(),
     })
 }
 
@@ -169,9 +175,8 @@ pub struct Thumb {
     pub bytes: Vec<u8>,
 }
 
-pub fn fetch_thumb(client: &mut Client, file: &str) -> Result<Thumb, FetchError> {
-    let url = thumb_url(file);
-    let resp = client.get(&url, None)?;
+pub fn fetch_thumb(client: &mut Client, url: &str) -> Result<Thumb, FetchError> {
+    let resp = client.get(url, None)?;
     let content_type = resp
         .headers()
         .get("content-type")
@@ -194,11 +199,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn urls_are_percent_encoded() {
-        assert_eq!(
-            thumb_url("Antonín Novotný 1968.jpg"),
-            "https://commons.wikimedia.org/wiki/Special:FilePath/Anton%C3%ADn%20Novotn%C3%BD%201968.jpg?width=1280"
-        );
+    fn page_url_is_percent_encoded() {
         assert_eq!(
             page_url("Alan Turing (1951) (crop).jpg"),
             "https://commons.wikimedia.org/wiki/File:Alan_Turing_(1951)_(crop).jpg"
@@ -217,15 +218,20 @@ mod tests {
             "query": {
                 "normalized": [{"from": "File:a b.jpg", "to": "File:A b.jpg"}],
                 "pages": [
-                    {"title": "File:A b.jpg", "imageinfo": [{"extmetadata": {
+                    {"title": "File:A b.jpg", "imageinfo": [{
+                        "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/A_b.jpg/1280px-A_b.jpg",
+                        "extmetadata": {
                         "LicenseShortName": {"value": "CC BY-SA 3.0 nl"},
                         "LicenseUrl": {"value": "https://creativecommons.org/licenses/by-sa/3.0/nl/deed.en"},
                         "Artist": {"value": "<a href=\"//x\">Anefo</a>"}
                     }}]},
-                    {"title": "File:Fair.jpg", "imageinfo": [{"extmetadata": {
+                    {"title": "File:Fair.jpg", "imageinfo": [{"thumburl": "https://upload.wikimedia.org/f.jpg", "extmetadata": {
                         "LicenseShortName": {"value": "Fair use"}
                     }}]},
-                    {"title": "File:None.jpg", "imageinfo": [{"extmetadata": {}}]},
+                    {"title": "File:None.jpg", "imageinfo": [{"thumburl": "https://upload.wikimedia.org/n.jpg", "extmetadata": {}}]},
+                    {"title": "File:NoThumb.jpg", "imageinfo": [{"extmetadata": {
+                        "LicenseShortName": {"value": "CC0"}
+                    }}]},
                     {"title": "File:Gone.jpg", "missing": true}
                 ]
             }
@@ -237,8 +243,10 @@ mod tests {
                 short_name: "CC BY-SA 3.0 nl".into(),
                 url: Some("https://creativecommons.org/licenses/by-sa/3.0/nl/deed.en".into()),
                 artist: Some("Anefo".into()),
+                thumb: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/A_b.jpg/1280px-A_b.jpg".into(),
             })
         );
+        assert_eq!(m["NoThumb.jpg"], FileStatus::Missing);
         assert_eq!(m["Fair.jpg"], FileStatus::Rejected("licence".into()));
         assert_eq!(m["None.jpg"], FileStatus::Rejected("licence".into()));
         assert_eq!(m["Gone.jpg"], FileStatus::Missing);
