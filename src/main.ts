@@ -63,6 +63,15 @@ function say(text: string) {
   if (text) notice.scrollIntoView({ block: "nearest" });
 }
 
+function offerRetry() {
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "Retry";
+  retry.addEventListener("click", () => void start());
+  notice.replaceChildren("No face right now.", retry);
+  notice.scrollIntoView({ block: "nearest" });
+}
+
 function render() {
   if (!game) return;
   renderFacts(facts, game.facts, game.rows.length, game.done);
@@ -209,14 +218,16 @@ async function start() {
   portrait.hidden = false;
   game = loadGame(n);
   if (!game) {
+    say("Loading today's face");
     try {
       const res = await getPuzzle(today);
       game = { n: res.n, token: res.token, rows: [], facts: [], done: false, won: false };
       saveGame(game);
     } catch {
-      say("No face right now. Try again in a moment.");
+      offerRetry();
       return;
     }
+    say("");
   }
   form.hidden = game.done;
   render();

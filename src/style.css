@@ -175,6 +175,10 @@ main,
   min-height: 0;
 }
 
+.notice button {
+  margin-left: 0.75rem;
+}
+
 .facts {
   list-style: none;
   margin: 1rem 0 0;

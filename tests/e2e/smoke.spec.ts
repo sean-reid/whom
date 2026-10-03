@@ -2,11 +2,30 @@ import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { gotoLaunchDay } from "./helpers";
 
-test("the front page loads with the wordmark and today's number", async ({ page }, info) => {
+test("the front page loads, and a failed puzzle fetch offers Retry", async ({ page }, info) => {
+  await page.route("**/api/puzzle*", (route) =>
+    route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"down"}' }),
+  );
   await gotoLaunchDay(page);
   await expect(page).toHaveTitle("WHOM?");
   await expect(page.locator(".wordmark")).toHaveText("WHOM?");
   await expect(page.locator("#issue")).toHaveText(/^No\. \d+ · \d{1,2} \w{3} \d{4}$/);
+  await expect(page.locator("#notice")).toContainText("No face right now.");
+  await expect(page.locator("#guess-form")).toBeHidden();
+  const retry = page.getByRole("button", { name: "Retry" });
+  expect((await retry.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/puzzle*", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await retry.click();
+  await expect(page.locator("#notice")).toHaveText("Loading today's face");
+  release();
+  await expect(page.locator("#notice")).toHaveText("");
+  await expect(page.locator("#guess-form")).toBeVisible();
   await page.screenshot({ path: info.outputPath("front.png"), fullPage: true });
 });
 
