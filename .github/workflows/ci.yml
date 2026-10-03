@@ -52,3 +52,18 @@ jobs:
             playwright-report
             test-results
           retention-days: 7
+
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/pipeline
+      - run: cargo fmt --check --manifest-path tools/pipeline/Cargo.toml
+      - run: cargo clippy --all-targets --manifest-path tools/pipeline/Cargo.toml -- -D warnings
+      - run: cargo test --manifest-path tools/pipeline/Cargo.toml

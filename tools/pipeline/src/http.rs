@@ -1,0 +1,297 @@
+use anyhow::Result;
+use reqwest::blocking::{Client as Inner, RequestBuilder, Response};
+use reqwest::redirect::Policy;
+use reqwest::{StatusCode, Url};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
+
+pub const USER_AGENT: &str =
+    "whom-pipeline/0.1 (https://github.com/sean-reid/whom; seanreid.mail@gmail.com)";
+pub const WIKIMEDIA_GAP: Duration = Duration::from_millis(1500);
+pub const QLEVER_GAP: Duration = Duration::from_millis(1000);
+pub const CLOUDFLARE_GAP: Duration = Duration::from_millis(300);
+const BACKOFF_START: Duration = Duration::from_secs(30);
+const MAX_429: u32 = 3;
+const MAX_TRANSIENT_ATTEMPTS: u32 = 3;
+const MAX_REDIRECTS: u32 = 5;
+
+#[derive(Debug)]
+pub enum FetchError {
+    NotFound,
+    Transient(String),
+    Fatal(String),
+}
+
+impl std::fmt::Display for FetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FetchError::NotFound => write!(f, "not found"),
+            FetchError::Transient(s) => write!(f, "transient: {s}"),
+            FetchError::Fatal(s) => write!(f, "fatal: {s}"),
+        }
+    }
+}
+
+impl std::error::Error for FetchError {}
+
+struct Pacer {
+    gap: Duration,
+    last: Option<Instant>,
+}
+
+impl Pacer {
+    fn wait(&mut self) {
+        if let Some(last) = self.last {
+            let due = last + self.gap;
+            let now = Instant::now();
+            if due > now {
+                sleep(due - now);
+            }
+        }
+        self.last = Some(Instant::now());
+    }
+}
+
+pub struct Client {
+    inner: Inner,
+    wikimedia: Pacer,
+    qlever: Pacer,
+    cloudflare: Pacer,
+    other: Pacer,
+    consecutive_429: u32,
+    pub requests: u64,
+}
+
+impl Client {
+    pub fn new() -> Result<Self> {
+        let inner = Inner::builder()
+            .user_agent(USER_AGENT)
+            .timeout(Duration::from_secs(300))
+            .redirect(Policy::none())
+            .build()?;
+        let pacer = |gap| Pacer { gap, last: None };
+        Ok(Client {
+            inner,
+            wikimedia: pacer(WIKIMEDIA_GAP),
+            qlever: pacer(QLEVER_GAP),
+            cloudflare: pacer(CLOUDFLARE_GAP),
+            other: pacer(Duration::from_secs(1)),
+            consecutive_429: 0,
+            requests: 0,
+        })
+    }
+
+    fn pacer_for(&mut self, url: &str) -> &mut Pacer {
+        let host = url
+            .split("://")
+            .nth(1)
+            .and_then(|r| r.split('/').next())
+            .unwrap_or("");
+        if host.ends_with("wikimedia.org") || host.ends_with("wikipedia.org") {
+            &mut self.wikimedia
+        } else if host.ends_with("qlever.dev") {
+            &mut self.qlever
+        } else if host.ends_with("cloudflare.com") {
+            &mut self.cloudflare
+        } else {
+            &mut self.other
+        }
+    }
+
+    pub fn get(&mut self, url: &str, accept: Option<&str>) -> Result<Response, FetchError> {
+        self.send(url, |c, u| {
+            let r = c.get(u);
+            match accept {
+                Some(a) => r.header("Accept", a),
+                None => r,
+            }
+        })
+    }
+
+    // `build` receives the URL to hit, which changes when a 3xx is followed.
+    pub fn send<F>(&mut self, url: &str, build: F) -> Result<Response, FetchError>
+    where
+        F: Fn(&Inner, &str) -> RequestBuilder,
+    {
+        let mut url = url.to_string();
+        let mut transient_attempts = 0;
+        let mut redirects = 0;
+        let mut backoff = BACKOFF_START;
+        loop {
+            self.pacer_for(&url).wait();
+            self.requests += 1;
+            let result = build(&self.inner, &url).send();
+            let resp = match result {
+                Ok(r) => r,
+                Err(e) => {
+                    transient_attempts += 1;
+                    if transient_attempts >= MAX_TRANSIENT_ATTEMPTS {
+                        return Err(FetchError::Transient(e.to_string()));
+                    }
+                    eprintln!("  {url}: {e}; retrying in 5s");
+                    sleep(Duration::from_secs(5));
+                    continue;
+                }
+            };
+            let status = resp.status();
+            if status.is_success() {
+                self.consecutive_429 = 0;
+                return Ok(resp);
+            }
+            if status.is_redirection() {
+                redirects += 1;
+                if redirects > MAX_REDIRECTS {
+                    return Err(FetchError::Fatal(format!(
+                        "more than {MAX_REDIRECTS} redirects from {url}"
+                    )));
+                }
+                url = redirect_target(&url, &resp).ok_or_else(|| {
+                    FetchError::Fatal(format!("{status} without a usable Location from {url}"))
+                })?;
+                continue;
+            }
+            if status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::SERVICE_UNAVAILABLE
+            {
+                if status == StatusCode::TOO_MANY_REQUESTS {
+                    self.consecutive_429 += 1;
+                    if self.consecutive_429 >= MAX_429 {
+                        return Err(FetchError::Fatal(format!(
+                            "{MAX_429} consecutive 429 responses, last from {url}"
+                        )));
+                    }
+                } else {
+                    transient_attempts += 1;
+                    if transient_attempts >= MAX_TRANSIENT_ATTEMPTS {
+                        return Err(FetchError::Transient(format!("{status} from {url}")));
+                    }
+                }
+                let wait = retry_after(&resp).unwrap_or(backoff);
+                backoff *= 2;
+                eprintln!("  {status} from {url}; waiting {}s", wait.as_secs());
+                sleep(wait);
+                continue;
+            }
+            if status == StatusCode::NOT_FOUND {
+                return Err(FetchError::NotFound);
+            }
+            if status.is_server_error() {
+                transient_attempts += 1;
+                if transient_attempts >= MAX_TRANSIENT_ATTEMPTS {
+                    return Err(FetchError::Transient(format!("{status} from {url}")));
+                }
+                sleep(backoff);
+                backoff *= 2;
+                continue;
+            }
+            let body = resp.text().unwrap_or_default();
+            return Err(FetchError::Fatal(format!(
+                "{status} from {url}: {}",
+                body.chars().take(300).collect::<String>()
+            )));
+        }
+    }
+}
+
+fn redirect_target(from: &str, resp: &Response) -> Option<String> {
+    let location = resp.headers().get("location")?.to_str().ok()?;
+    let base = Url::parse(from).ok()?;
+    Some(base.join(location).ok()?.to_string())
+}
+
+fn retry_after(resp: &Response) -> Option<Duration> {
+    let v = resp.headers().get("retry-after")?.to_str().ok()?;
+    retry_after_value(v.trim(), time::OffsetDateTime::now_utc())
+}
+
+const HTTP_DATE: &[time::format_description::BorrowedFormatItem<'static>] = time::macros::format_description!(
+    "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT"
+);
+
+fn retry_after_value(v: &str, now: time::OffsetDateTime) -> Option<Duration> {
+    if let Ok(secs) = v.parse::<u64>() {
+        return Some(Duration::from_secs(secs.max(1)));
+    }
+    let at = time::PrimitiveDateTime::parse(v, HTTP_DATE)
+        .ok()?
+        .assume_utc();
+    let secs = (at - now).whole_seconds().max(1) as u64;
+    Some(Duration::from_secs(secs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn retry_after_accepts_seconds_and_http_dates() {
+        let now = time::macros::datetime!(1994-11-06 08:49:00 UTC);
+        assert_eq!(
+            retry_after_value("120", now),
+            Some(Duration::from_secs(120))
+        );
+        assert_eq!(retry_after_value("0", now), Some(Duration::from_secs(1)));
+        assert_eq!(
+            retry_after_value("Sun, 06 Nov 1994 08:49:37 GMT", now),
+            Some(Duration::from_secs(37))
+        );
+        assert_eq!(
+            retry_after_value("Sun, 06 Nov 1994 08:00:00 GMT", now),
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(retry_after_value("soon", now), None);
+    }
+
+    fn serve(responses: Vec<String>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            for body in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap();
+                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                seen.push(request.lines().next().unwrap_or("").to_string());
+                stream.write_all(body.as_bytes()).unwrap();
+            }
+            seen
+        });
+        (format!("http://{addr}"), handle)
+    }
+
+    #[test]
+    fn redirects_are_followed_through_the_paced_loop() {
+        let (base, handle) = serve(vec![
+            "HTTP/1.1 302 Found
+Location: /thumb/x.jpg
+Content-Length: 0
+Connection: close
+
+"
+            .to_string(),
+            "HTTP/1.1 200 OK
+Content-Type: image/jpeg
+Content-Length: 3
+Connection: close
+
+abc"
+            .to_string(),
+        ]);
+        let mut client = Client::new().unwrap();
+        let started = Instant::now();
+        let resp = client
+            .get(&format!("{base}/wiki/Special:FilePath/x.jpg"), None)
+            .unwrap();
+        assert_eq!(resp.bytes().unwrap().as_ref(), b"abc");
+        assert_eq!(client.requests, 2);
+        assert!(
+            started.elapsed() >= Duration::from_secs(1),
+            "second hop was not paced"
+        );
+        let lines = handle.join().unwrap();
+        assert_eq!(lines[0], "GET /wiki/Special:FilePath/x.jpg HTTP/1.1");
+        assert_eq!(lines[1], "GET /thumb/x.jpg HTTP/1.1");
+    }
+}
