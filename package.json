@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A daily game: one famous face, eight guesses at the first name.",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "npm run build && node scripts/seed-local.mjs .wrangler/state && wrangler dev --persist-to .wrangler/state --var SESSION_SECRET:dev --var PUZZLE_SEED:dev",
     "dev:web": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit && tsc -p worker/tsconfig.json",
@@ -15,7 +15,8 @@
     "test": "vitest run",
     "size": "node scripts/size.mjs",
     "test:e2e": "playwright test",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "seed": "node scripts/seed-local.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260928.1",
