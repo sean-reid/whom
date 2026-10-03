@@ -213,6 +213,9 @@ main,
 .guesses .line {
   color: var(--ink-soft);
   line-height: 1.5;
+}
+
+.guesses li:last-child .line {
   animation: settle 300ms ease-out;
 }
 
