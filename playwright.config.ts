@@ -1,20 +1,17 @@
-import { readdirSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 const port = 8787;
-const fixtures = [
-  "pool.json",
-  "names.json",
-  ...readdirSync("tests/fixtures/crops").map((f) => `crops/${f}`),
-];
-const seed = fixtures
-  .map((f) => `npx wrangler r2 object put whom/${f} --file tests/fixtures/${f} --local`)
-  .join(" && ");
-const dev = `npx wrangler dev --port ${port} --ip 127.0.0.1 --var SESSION_SECRET:e2e-session --var PUZZLE_SEED:e2e-seed`;
+const apiPort = 8788;
+const vars = "--var SESSION_SECRET:e2e-session --var PUZZLE_SEED:e2e-seed";
+const dev = (p: number, state: string) =>
+  `npx wrangler dev --port ${p} --ip 127.0.0.1 ${vars} --persist-to ${state}`;
 const api = /api\.spec\.ts$/;
 
+// The API suite gets its own Worker so its rate-limit case never eats the budget the
+// browser suites play against.
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -24,7 +21,6 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
-  workers: 1,
   projects: [
     {
       name: "mobile",
@@ -46,13 +42,20 @@ export default defineConfig({
       testIgnore: api,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },
-    // Last, because its rate-limit case spends the shared 30-per-minute budget.
-    { name: "api", testMatch: api },
+    { name: "api", testMatch: api, use: { baseURL: `http://127.0.0.1:${apiPort}` } },
   ],
-  webServer: {
-    command: `npm run build && ${seed} && ${dev}`,
-    url: `http://127.0.0.1:${port}/`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-  },
+  webServer: [
+    {
+      command: dev(port, ".wrangler/state"),
+      url: `http://127.0.0.1:${port}/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+    {
+      command: dev(apiPort, ".wrangler/state-api"),
+      url: `http://127.0.0.1:${apiPort}/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+  ],
 });

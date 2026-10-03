@@ -370,6 +370,10 @@ main,
   min-width: 2px;
 }
 
+.dist .bar:not(.some) {
+  visibility: hidden;
+}
+
 .dist .bar.all {
   background: none;
   border: 1px solid var(--ink-soft);
