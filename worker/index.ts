@@ -12,11 +12,12 @@ import { answerRecord, facts, fallbackRecord, hint, isWin, phrases } from "../sh
 import { normalizeName } from "../shared/names.ts";
 import { findPerson, loadData, type Loaded } from "./data.ts";
 import type { Env } from "./env.ts";
-import { newNonce, signToken, verifyToken } from "./token.ts";
+import { hex, newNonce, signToken, verifyToken } from "./token.ts";
 
 export { Schedule } from "./pins.ts";
 export { Puzzle } from "./puzzle.ts";
 
+const encoder = new TextEncoder();
 const DAY = "public, max-age=86400";
 const THREE_DAYS_MS = 3 * 86_400_000;
 const MAX_BODY_BYTES = 4096;
@@ -66,10 +67,17 @@ async function answerFor(
   return { answer: found.person, data: found.data };
 }
 
+const clientIp = (request: Request): string => request.headers.get("cf-connecting-ip") ?? "unknown";
+
 async function throttled(request: Request, env: Env): Promise<boolean> {
-  const key = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const { success } = await env.GUESS_RATE.limit({ key });
+  const { success } = await env.GUESS_RATE.limit({ key: clientIp(request) });
   return !success;
+}
+
+// The object stores only this digest, never the address.
+async function clientKey(request: Request, n: number): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(`${clientIp(request)}/${n}`));
+  return hex(new Uint8Array(digest));
 }
 
 function parseNumber(segment: string, nowMs: number): number | null {
@@ -145,10 +153,13 @@ async function postGuess(request: Request, env: Env, ctx: ExecutionContext): Pro
   const guesses = [...game.guesses, guess];
   const won = isWin(guess, answer);
   const done = won || guesses.length >= MAX_GUESSES;
+  const puzzle = puzzleStub(env, game.n);
+  const bucket = won ? guesses.length - 1 : MAX_GUESSES;
+  const replayed = done
+    ? !(await puzzle.record(game.nonce, await clientKey(request, game.n), bucket))
+    : await puzzle.recorded(game.nonce);
+  if (replayed) return error("game over", 409);
   const next = await signToken({ ...game, guesses, done }, env.SESSION_SECRET);
-  if (done) {
-    await puzzleStub(env, game.n).record(game.nonce, won ? guesses.length - 1 : MAX_GUESSES);
-  }
   const answerName = normalizeName(answer.display);
   const languages = data.names.languages;
   const res: GuessResponse = {
@@ -192,7 +203,8 @@ async function getCrop(env: Env, ctx: ExecutionContext, segment: string): Promis
   });
 }
 
-async function getStats(env: Env, segment: string): Promise<Response> {
+async function getStats(request: Request, env: Env, segment: string): Promise<Response> {
+  if (await throttled(request, env)) return error("slow down", 429);
   const n = parseNumber(segment, Date.now());
   if (n === null) return error("not found", 404);
   const counts = await puzzleStub(env, n).stats();
@@ -227,7 +239,7 @@ async function route(
     return cached(request, ctx, () => getCrop(env, ctx, crop[1] ?? ""));
   }
   const stats = /^\/api\/stats\/([^/]+)$/.exec(pathname);
-  if (stats && method === "GET") return getStats(env, stats[1] ?? "");
+  if (stats && method === "GET") return getStats(request, env, stats[1] ?? "");
   return error("not found", 404);
 }
 

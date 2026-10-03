@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse } from "@playwright/test";
 import { MAX_GUESSES } from "../../shared/api";
 import type { GuessResponse, PuzzleResponse, StatsResponse } from "../../shared/api";
 import type { NamesFile, Person, PoolFile } from "../../shared/data";
@@ -45,25 +45,42 @@ test.beforeAll(async () => {
   answer = personForNumber(await scheduleOrder((pool as PoolFile).people, SEED), n);
 });
 
-async function newGame(request: APIRequestContext): Promise<PuzzleResponse> {
-  const res = await request.get(`/api/puzzle?date=${date}`);
+interface Client {
+  get(path: string): Promise<APIResponse>;
+  post(path: string, data: unknown): Promise<APIResponse>;
+}
+
+const octet = () => Math.floor(Math.random() * 254) + 1;
+
+// A game plays from its own address, as Cloudflare labels visitors, so the per-client
+// count and the rate limit see each game on its own.
+function client(request: APIRequestContext, ip = `10.${octet()}.${octet()}.${octet()}`): Client {
+  const headers = { "cf-connecting-ip": ip };
+  return {
+    get: (path) => request.get(path, { headers }),
+    post: (path, data) => request.post(path, { data, headers }),
+  };
+}
+
+async function newGame(from: Client): Promise<PuzzleResponse> {
+  const res = await from.get(`/api/puzzle?date=${date}`);
   expect(res.status()).toBe(200);
   return (await res.json()) as PuzzleResponse;
 }
 
-async function guess(request: APIRequestContext, token: string, name: string) {
-  const res = await request.post("/api/guess", { data: { token, name } });
+async function guess(from: Client, token: string, name: string) {
+  const res = await from.post("/api/guess", { token, name });
   return { status: res.status(), body: (await res.json()) as GuessResponse & { error?: string } };
 }
 
-async function stats(request: APIRequestContext): Promise<StatsResponse> {
-  const res = await request.get(`/api/stats/${n}`);
+async function stats(from: Client): Promise<StatsResponse> {
+  const res = await from.get(`/api/stats/${n}`);
   expect(res.status()).toBe(200);
   return (await res.json()) as StatsResponse;
 }
 
 test("today's puzzle returns a token with eight guesses left", async ({ request }) => {
-  const body = await newGame(request);
+  const body = await newGame(client(request));
   expect(body.n).toBe(n);
   expect(body.guessesLeft).toBe(MAX_GUESSES);
   expect(body.token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
@@ -76,25 +93,29 @@ test("bad and out of window dates are 400", async ({ request }) => {
 });
 
 test("an unknown name is 422 and a tampered token is 400", async ({ request }) => {
-  const { token } = await newGame(request);
-  const unknown = await guess(request, token, "Zebedee");
+  const me = client(request);
+  const { token } = await newGame(me);
+  const unknown = await guess(me, token, "Zebedee");
   expect(unknown.status).toBe(422);
   expect(unknown.body.error).toBe("unknown name");
   const [body, sig = ""] = token.split(".");
   const flipped = (sig[0] === "A" ? "B" : "A") + sig.slice(1);
-  const tampered = await guess(request, `${body}.${flipped}`, "Pierre");
+  const tampered = await guess(me, `${body}.${flipped}`, "Pierre");
   expect(tampered.status).toBe(400);
   expect(tampered.body.error).toBe("bad token");
 });
 
-test("a lost game grades every miss, drips facts, and counts once", async ({ request }) => {
-  const before = await stats(request);
-  let { token } = await newGame(request);
+test("a lost game grades every miss, drips facts, and counts once per client", async ({
+  request,
+}) => {
+  const me = client(request);
+  const before = await stats(me);
+  let { token } = await newGame(me);
   let penultimate = token;
   let last: GuessResponse | undefined;
   for (const [i, name] of misses.entries()) {
     penultimate = token;
-    const { status, body } = await guess(request, token, name);
+    const { status, body } = await guess(me, token, name);
     expect(status, `guess ${i + 1}`).toBe(200);
     expect(body.phrases).toHaveLength(6);
     expect(body.phrases[5]?.text).toMatch(ERA);
@@ -116,30 +137,38 @@ test("a lost game grades every miss, drips facts, and counts once", async ({ req
   expect(last?.reveal?.label).toBe(answer.label);
   expect(JSON.stringify({ ...last, token: "" })).not.toMatch(/Q\d+/);
 
-  const repeat = await guess(request, penultimate, "Ellen");
-  expect(repeat.status).toBe(200);
-  expect(repeat.body.done).toBe(true);
-  const over = await guess(request, token, "Ellen");
+  const repeat = await guess(me, penultimate, "Ellen");
+  expect(repeat.status).toBe(409);
+  expect(repeat.body.error).toBe("game over");
+  const over = await guess(me, token, "Ellen");
   expect(over.status).toBe(409);
 
-  const after = await stats(request);
+  const after = await stats(me);
   expect(after.total).toBe(before.total + 1);
   expect(after.counts[MAX_GUESSES]).toBe((before.counts[MAX_GUESSES] ?? 0) + 1);
+
+  const second = await newGame(me);
+  const win = await guess(me, second.token, answer.display);
+  expect(win.status).toBe(200);
+  expect(win.body.won).toBe(true);
+  expect(win.body.reveal?.label).toBe(answer.label);
+  expect((await stats(me)).counts).toEqual(after.counts);
 });
 
 test("a repeated guess is 422 and the right name wins with the same reveal", async ({
   request,
 }) => {
-  const { token } = await newGame(request);
-  const first = await guess(request, token, "Pierre");
-  const again = await guess(request, first.body.token, "pierre");
+  const me = client(request);
+  const { token } = await newGame(me);
+  const first = await guess(me, token, "Pierre");
+  const again = await guess(me, first.body.token, "pierre");
   expect(again.status).toBe(422);
   expect(again.body.error).toBe("already guessed");
   let token2 = first.body.token;
   let made = 1;
   const partner = rootPartner(normalizeName(answer.display));
   if (partner) {
-    const related = await guess(request, token2, partner);
+    const related = await guess(me, token2, partner);
     expect(related.status).toBe(200);
     expect(related.body.won).toBe(false);
     expect(related.body.phrases).toHaveLength(7);
@@ -147,7 +176,7 @@ test("a repeated guess is 422 and the right name wins with the same reveal", asy
     token2 = related.body.token;
     made += 1;
   }
-  const win = await guess(request, token2, answer.display.toUpperCase());
+  const win = await guess(me, token2, answer.display.toUpperCase());
   made += 1;
   expect(win.status).toBe(200);
   expect(win.body.won).toBe(true);
@@ -160,7 +189,7 @@ test("a repeated guess is 422 and the right name wins with the same reveal", asy
     wiki: answer.wiki,
     image: answer.image,
   });
-  const after = await stats(request);
+  const after = await stats(me);
   expect(after.counts[made - 1]).toBeGreaterThanOrEqual(1);
 });
 
@@ -169,7 +198,7 @@ test("a token older than three days is refused", async ({ request }) => {
     { n, nonce: "0".repeat(32), guesses: [], done: false, issued: Date.now() - 4 * DAY_MS },
     "e2e-session",
   );
-  const res = await guess(request, stale, "Pierre");
+  const res = await guess(client(request), stale, "Pierre");
   expect(res.status).toBe(400);
   expect(res.body.error).toBe("bad token");
 });
