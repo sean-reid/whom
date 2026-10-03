@@ -100,41 +100,62 @@ WHERE {
     }
     GROUP BY ?p
   }
-  OPTIONAL { ?p rdfs:label ?label FILTER(LANG(?label) = "en") }
+  OPTIONAL { ?p rdfs:label ?labelEn FILTER(LANG(?labelEn) = "en") }
+  OPTIONAL { ?p rdfs:label ?labelMul FILTER(LANG(?labelMul) = "mul") }
+  BIND(COALESCE(?labelEn, ?labelMul) AS ?label)
   OPTIONAL { ?p schema:description ?desc FILTER(LANG(?desc) = "en") }
   OPTIONAL { ?article schema:about ?p ; schema:isPartOf <https://en.wikipedia.org/> }
   OPTIONAL {
     ?p wdt:P735 ?gn .
-    OPTIONAL { ?gn rdfs:label ?gnLabel FILTER(LANG(?gnLabel) = "en") }
-    BIND(CONCAT(STRAFTER(STR(?gn), "entity/"), "=", COALESCE(?gnLabel, "")) AS ?gnpair)
+    OPTIONAL { ?gn rdfs:label ?gnEn FILTER(LANG(?gnEn) = "en") }
+    OPTIONAL { ?gn rdfs:label ?gnMul FILTER(LANG(?gnMul) = "mul") }
+    BIND(CONCAT(STRAFTER(STR(?gn), "entity/"), "=", COALESCE(?gnEn, ?gnMul, "")) AS ?gnpair)
   }
   OPTIONAL { ?p wdt:P1449 ?nick }
-  OPTIONAL { ?p wdt:P27 ?c . ?c rdfs:label ?cLabel FILTER(LANG(?cLabel) = "en") }
-  OPTIONAL { ?p wdt:P106 ?o . ?o rdfs:label ?oLabel FILTER(LANG(?oLabel) = "en") }
+  OPTIONAL {
+    ?p wdt:P27 ?c .
+    OPTIONAL { ?c rdfs:label ?cEn FILTER(LANG(?cEn) = "en") }
+    OPTIONAL { ?c rdfs:label ?cMul FILTER(LANG(?cMul) = "mul") }
+    BIND(COALESCE(?cEn, ?cMul) AS ?cLabel)
+  }
+  OPTIONAL {
+    ?p wdt:P106 ?o .
+    OPTIONAL { ?o rdfs:label ?oEn FILTER(LANG(?oEn) = "en") }
+    OPTIONAL { ?o rdfs:label ?oMul FILTER(LANG(?oMul) = "mul") }
+    BIND(COALESCE(?oEn, ?oMul) AS ?oLabel)
+  }
 }
 GROUP BY ?p ?label ?desc ?img ?dob ?article
 ORDER BY ?p"#
         .to_string()
 }
 
+const GIVEN_NAME_LANGS: &str =
+    r#"(GROUP_CONCAT(DISTINCT STRAFTER(STR(?lang), "entity/"); SEPARATOR="|") AS ?langs)"#;
+
 pub fn common_given_names_query() -> String {
-    r#"SELECT ?gn ?label ?n (GROUP_CONCAT(DISTINCT ?lang; SEPARATOR="|") AS ?langs) WHERE {
-  { SELECT ?gn (COUNT(?h) AS ?n) WHERE { ?h wdt:P735 ?gn } GROUP BY ?gn HAVING (?n >= 50) }
-  OPTIONAL { ?gn rdfs:label ?label FILTER(LANG(?label) = "en") }
-  OPTIONAL { ?gn wdt:P407 ?lang }
-}
+    format!(
+        r#"SELECT ?gn ?label ?n {GIVEN_NAME_LANGS} WHERE {{
+  {{ SELECT ?gn (COUNT(?h) AS ?n) WHERE {{ ?h wdt:P735 ?gn }} GROUP BY ?gn HAVING (?n >= 50) }}
+  OPTIONAL {{ ?gn rdfs:label ?labelEn FILTER(LANG(?labelEn) = "en") }}
+  OPTIONAL {{ ?gn rdfs:label ?labelMul FILTER(LANG(?labelMul) = "mul") }}
+  BIND(COALESCE(?labelEn, ?labelMul) AS ?label)
+  OPTIONAL {{ ?gn wdt:P407 ?lang }}
+}}
 GROUP BY ?gn ?label ?n
 ORDER BY ?gn"#
-        .to_string()
+    )
 }
 
 fn given_names_by_id_query(qids: &[&str]) -> String {
     let values: Vec<String> = qids.iter().map(|q| format!("wd:{q}")).collect();
     format!(
-        r#"SELECT ?gn ?label (COUNT(DISTINCT ?h) AS ?n) (GROUP_CONCAT(DISTINCT ?lang; SEPARATOR="|") AS ?langs) WHERE {{
+        r#"SELECT ?gn ?label (COUNT(DISTINCT ?h) AS ?n) {GIVEN_NAME_LANGS} WHERE {{
   VALUES ?gn {{ {} }}
   OPTIONAL {{ ?h wdt:P735 ?gn }}
-  OPTIONAL {{ ?gn rdfs:label ?label FILTER(LANG(?label) = "en") }}
+  OPTIONAL {{ ?gn rdfs:label ?labelEn FILTER(LANG(?labelEn) = "en") }}
+  OPTIONAL {{ ?gn rdfs:label ?labelMul FILTER(LANG(?labelMul) = "mul") }}
+  BIND(COALESCE(?labelEn, ?labelMul) AS ?label)
   OPTIONAL {{ ?gn wdt:P407 ?lang }}
 }}
 GROUP BY ?gn ?label"#,
@@ -147,7 +168,9 @@ fn labels_query(qids: &[&str]) -> String {
     format!(
         r#"SELECT ?item ?label WHERE {{
   VALUES ?item {{ {} }}
-  ?item rdfs:label ?label FILTER(LANG(?label) = "en")
+  OPTIONAL {{ ?item rdfs:label ?labelEn FILTER(LANG(?labelEn) = "en") }}
+  OPTIONAL {{ ?item rdfs:label ?labelMul FILTER(LANG(?labelMul) = "mul") }}
+  BIND(COALESCE(?labelEn, ?labelMul) AS ?label)
 }}"#,
         values.join(" ")
     )

@@ -79,7 +79,10 @@ pub fn run(args: &Args) -> Result<()> {
 
     let mut with_names = Vec::new();
     for c in todo {
-        if c.givens.is_empty() {
+        if c.label.trim().is_empty() {
+            state.mark_skipped(&c.qid, "no-label");
+            report.skip("no-label");
+        } else if c.givens.is_empty() {
             state.mark_skipped(&c.qid, "no-given-name");
             report.skip("no-given-name");
         } else {

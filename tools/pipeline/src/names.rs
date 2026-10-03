@@ -1,6 +1,6 @@
 use crate::families;
 use crate::store::Name;
-use crate::text::normalize;
+use crate::text::{ascii_letters, normalize};
 use rphonetic::DoubleMetaphone;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -97,7 +97,12 @@ impl Graph {
     }
 
     fn codes(&self, normalized: &str) -> (String, String) {
-        let dm = self.dm.double_metaphone(normalized).primary();
+        let ascii = ascii_letters(normalized);
+        let dm = if ascii.is_empty() {
+            String::new()
+        } else {
+            self.dm.double_metaphone(&ascii).primary()
+        };
         let rhyme = rhyme_of(&dm);
         (dm, rhyme)
     }
@@ -128,6 +133,8 @@ mod tests {
         assert_eq!(rhyme, "TR");
         let (dm, _) = g.codes("john");
         assert_eq!(dm, "JN");
+        assert_eq!(g.codes("łukasz"), g.codes("lukasz"));
+        assert_eq!(g.codes("иван"), (String::new(), String::new()));
     }
 
     #[test]

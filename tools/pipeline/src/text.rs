@@ -10,6 +10,27 @@ pub fn normalize(s: &str) -> String {
     stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+pub fn ascii_letters(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in normalize(s).chars() {
+        match c {
+            'a'..='z' | ' ' | '-' => out.push(c),
+            'ł' => out.push('l'),
+            'ø' | 'ɔ' => out.push('o'),
+            'đ' | 'ð' => out.push('d'),
+            'æ' => out.push_str("ae"),
+            'œ' => out.push_str("oe"),
+            'ß' => out.push_str("ss"),
+            'þ' => out.push_str("th"),
+            'ı' => out.push('i'),
+            'ħ' => out.push('h'),
+            'ŧ' => out.push('t'),
+            _ => {}
+        }
+    }
+    out
+}
+
 pub fn first_token(s: &str) -> Option<&str> {
     s.split_whitespace().next()
 }
@@ -96,6 +117,16 @@ mod tests {
     fn normalize_handles_compatibility_forms() {
         assert_eq!(normalize("ﬁona"), "fiona");
         assert_eq!(normalize("Ｊｏｈｎ"), "john");
+    }
+
+    #[test]
+    fn ascii_letters_folds_what_nfkd_leaves_behind() {
+        assert_eq!(ascii_letters("Łukasz"), "lukasz");
+        assert_eq!(ascii_letters("Søren"), "soren");
+        assert_eq!(ascii_letters("Þórður"), "thordur");
+        assert_eq!(ascii_letters("Jean-Paul"), "jean-paul");
+        assert_eq!(ascii_letters("Иван"), "");
+        assert_eq!(ascii_letters("Ali2"), "ali");
     }
 
     #[test]
