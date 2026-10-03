@@ -1,4 +1,5 @@
 use crate::http::Client;
+use crate::names::GivenName;
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -262,17 +263,8 @@ pub fn percent_decode(s: &str) -> String {
         .into_owned()
 }
 
-pub struct GivenNameRow {
-    pub qid: String,
-    pub label: String,
-    pub langs: Vec<String>,
-    pub count: u64,
-    pub same_as: Vec<String>,
-    pub hypocorism: bool,
-}
-
-fn given_name_from_row(row: &Row) -> Option<GivenNameRow> {
-    Some(GivenNameRow {
+fn given_name_from_row(row: &Row) -> Option<GivenName> {
+    Some(GivenName {
         qid: qid_of(row.get("gn")?).to_string(),
         label: row.get("label").cloned().unwrap_or_default(),
         langs: split_multi(row.get("langs"))
@@ -315,7 +307,7 @@ pub fn birth_years(client: &mut Client, qids: &[String]) -> Result<Vec<BirthYear
     Ok(out)
 }
 
-pub fn common_given_names(client: &mut Client) -> Result<Vec<GivenNameRow>> {
+pub fn common_given_names(client: &mut Client) -> Result<Vec<GivenName>> {
     let mut out = Vec::new();
     paged(client, &common_given_names_query(), |rows| {
         out.extend(rows.iter().filter_map(given_name_from_row));
@@ -324,7 +316,7 @@ pub fn common_given_names(client: &mut Client) -> Result<Vec<GivenNameRow>> {
     Ok(out)
 }
 
-pub fn given_names_by_id(client: &mut Client, qids: &[String]) -> Result<Vec<GivenNameRow>> {
+pub fn given_names_by_id(client: &mut Client, qids: &[String]) -> Result<Vec<GivenName>> {
     let mut out = Vec::new();
     for chunk in qids.chunks(VALUES_BATCH) {
         let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();

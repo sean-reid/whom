@@ -3,7 +3,40 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-pub const TRANSIENT_SKIP: &str = "fetch-error";
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Skip {
+    NoLabel,
+    NoGivenName,
+    Licence,
+    MissingFile,
+    FetchError,
+    Undecodable,
+    NoFace,
+    ManyFaces,
+    SmallFace,
+}
+
+impl Skip {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Skip::NoLabel => "no-label",
+            Skip::NoGivenName => "no-given-name",
+            Skip::Licence => "licence",
+            Skip::MissingFile => "missing-file",
+            Skip::FetchError => "fetch-error",
+            Skip::Undecodable => "undecodable",
+            Skip::NoFace => "no-face",
+            Skip::ManyFaces => "many-faces",
+            Skip::SmallFace => "small-face",
+        }
+    }
+}
+
+impl std::fmt::Display for Skip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ImageInfo {
@@ -108,7 +141,7 @@ impl State {
         }
         match self.skipped.get(qid) {
             None => true,
-            Some(reason) => reason == TRANSIENT_SKIP,
+            Some(reason) => reason == Skip::FetchError.as_str(),
         }
     }
 
@@ -117,8 +150,9 @@ impl State {
         self.processed.insert(qid.to_string());
     }
 
-    pub fn mark_skipped(&mut self, qid: &str, reason: &str) {
-        self.skipped.insert(qid.to_string(), reason.to_string());
+    pub fn mark_skipped(&mut self, qid: &str, reason: Skip) {
+        self.skipped
+            .insert(qid.to_string(), reason.as_str().to_string());
     }
 }
 
@@ -163,9 +197,9 @@ mod tests {
     #[test]
     fn skipped_qid_is_retried_only_after_a_transient_error() {
         let mut s = State::empty("2026-01-01");
-        s.mark_skipped("Q1", "licence");
-        s.mark_skipped("Q2", "no-face");
-        s.mark_skipped("Q3", TRANSIENT_SKIP);
+        s.mark_skipped("Q1", Skip::Licence);
+        s.mark_skipped("Q2", Skip::NoFace);
+        s.mark_skipped("Q3", Skip::FetchError);
         assert!(!s.needs_fetch("Q1"));
         assert!(!s.needs_fetch("Q2"));
         assert!(s.needs_fetch("Q3"));
@@ -179,7 +213,7 @@ mod tests {
         let mut s = State::empty("2026-01-01");
         s.mark_processed("Q9");
         s.mark_processed("Q10");
-        s.mark_skipped("Q5", "licence");
+        s.mark_skipped("Q5", Skip::Licence);
         let text = serde_json::to_string(&s).unwrap();
         assert!(text.contains(r#""processed":["Q10","Q9"]"#));
         assert!(text.contains(r#""skipped":{"Q5":"licence"}"#));

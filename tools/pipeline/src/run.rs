@@ -1,9 +1,9 @@
 use crate::commons::{self, FileStatus};
 use crate::face::{self, FaceDetector, Outcome};
 use crate::http::{Client, FetchError};
-use crate::names::{GivenName, Graph};
+use crate::names::Graph;
 use crate::qlever::{self, Candidate};
-use crate::store::{self, ImageInfo, Names, Person, Pool, State, TRANSIENT_SKIP};
+use crate::store::{self, ImageInfo, Names, Person, Pool, Skip, State};
 use crate::text::{first_token, is_name_label, normalize};
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,13 +24,66 @@ struct Report {
     scanned: usize,
     to_fetch: usize,
     fetched: usize,
-    skipped: BTreeMap<String, usize>,
+    skipped: BTreeMap<&'static str, usize>,
 }
 
 impl Report {
-    fn skip(&mut self, reason: &str) {
-        *self.skipped.entry(reason.to_string()).or_insert(0) += 1;
+    fn skip(&mut self, reason: Skip) {
+        *self.skipped.entry(reason.as_str()).or_insert(0) += 1;
     }
+
+    fn print(&self, pool: &Pool, names: &Names, graph: &Graph, client: &Client, started: Instant) {
+        println!();
+        println!("people scanned: {}", self.scanned);
+        println!("people needing a fetch: {}", self.to_fetch);
+        println!("people added: {}", self.fetched);
+        println!(
+            "pool size: {} ({} retired)",
+            pool.people.len(),
+            pool.people.iter().filter(|p| p.retired).count()
+        );
+        println!("names in graph: {}", names.names.len());
+        println!(
+            "names with an era: {}, with sameAs: {}, with shortOf: {}",
+            names.names.values().filter(|n| n.era.is_some()).count(),
+            names
+                .names
+                .values()
+                .filter(|n| !n.same_as.is_empty())
+                .count(),
+            names
+                .names
+                .values()
+                .filter(|n| !n.short_of.is_empty())
+                .count()
+        );
+        println!("given names without an English label: {}", graph.unlabelled);
+        println!(
+            "given-name labels failing the name rule: {}",
+            graph.rejected_labels
+        );
+        println!("languages seen: {}", graph.langs_seen.len());
+        println!(
+            "languages without a family: {} [{}]",
+            graph.langs_without_family.len(),
+            graph
+                .langs_without_family
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!("skips this run:");
+        for (reason, n) in &self.skipped {
+            println!("  {reason}: {n}");
+        }
+        println!("requests: {}", client.requests);
+        println!("wall time: {:.0}s", started.elapsed().as_secs_f64());
+    }
+}
+
+pub fn crop_key(qid: &str) -> String {
+    format!("crops/{qid}.jpg")
 }
 
 pub fn today() -> String {
@@ -76,7 +129,7 @@ pub fn run(args: &Args) -> Result<()> {
     }
     for c in &candidates {
         if let Some(p) = pool.people.iter_mut().find(|p| p.qid == c.qid) {
-            refresh(p, c);
+            p.update_from(c);
         }
     }
 
@@ -94,11 +147,11 @@ pub fn run(args: &Args) -> Result<()> {
     let mut with_names = Vec::new();
     for c in todo {
         if c.label.trim().is_empty() {
-            state.mark_skipped(&c.qid, "no-label");
-            report.skip("no-label");
+            state.mark_skipped(&c.qid, Skip::NoLabel);
+            report.skip(Skip::NoLabel);
         } else if !c.givens.iter().any(|(_, l)| is_name_label(l.trim())) {
-            state.mark_skipped(&c.qid, "no-given-name");
-            report.skip("no-given-name");
+            state.mark_skipped(&c.qid, Skip::NoGivenName);
+            report.skip(Skip::NoGivenName);
         } else {
             with_names.push(c);
         }
@@ -123,13 +176,13 @@ pub fn run(args: &Args) -> Result<()> {
                 let licence = match licences.get(&c.file) {
                     Some(FileStatus::Licensed(l)) => l.clone(),
                     Some(FileStatus::Rejected(reason)) => {
-                        state.mark_skipped(&c.qid, reason);
-                        report.skip(reason);
+                        state.mark_skipped(&c.qid, *reason);
+                        report.skip(*reason);
                         continue;
                     }
                     Some(FileStatus::Missing) | None => {
-                        state.mark_skipped(&c.qid, "missing-file");
-                        report.skip("missing-file");
+                        state.mark_skipped(&c.qid, Skip::MissingFile);
+                        report.skip(Skip::MissingFile);
                         continue;
                     }
                 };
@@ -146,13 +199,13 @@ pub fn run(args: &Args) -> Result<()> {
                     };
                 match reason {
                     Some(reason) => {
-                        state.mark_skipped(&c.qid, &reason);
-                        report.skip(&reason);
+                        state.mark_skipped(&c.qid, reason);
+                        report.skip(reason);
                     }
                     None => {
                         state.mark_processed(&c.qid);
                         report.fetched += 1;
-                        pending.push(format!("crops/{}.jpg", c.qid));
+                        pending.push(crop_key(&c.qid));
                         pool.upsert(person_from(c, &licence));
                         println!("  {} {} ok", c.qid, c.label);
                     }
@@ -167,7 +220,7 @@ pub fn run(args: &Args) -> Result<()> {
         bail!("run stopped: {e}");
     }
 
-    let graph = build_graph(&mut client, &candidates, &pool)?;
+    let mut graph = build_graph(&mut client, &candidates, &pool)?;
     let languages = qlever::labels(
         &mut client,
         &graph.langs_seen.iter().cloned().collect::<Vec<_>>(),
@@ -175,57 +228,12 @@ pub fn run(args: &Args) -> Result<()> {
     let names = Names {
         version: 1,
         languages,
-        names: graph.names,
+        names: std::mem::take(&mut graph.names),
     };
     store::write_json(&args.out.join("names.json"), &names)?;
     append_pending(&args.out, &["names.json".to_string()])?;
 
-    println!();
-    println!("people scanned: {}", report.scanned);
-    println!("people needing a fetch: {}", report.to_fetch);
-    println!("people added: {}", report.fetched);
-    println!(
-        "pool size: {} ({} retired)",
-        pool.people.len(),
-        pool.people.iter().filter(|p| p.retired).count()
-    );
-    println!("names in graph: {}", names.names.len());
-    println!(
-        "names with an era: {}, with sameAs: {}, with shortOf: {}",
-        names.names.values().filter(|n| n.era.is_some()).count(),
-        names
-            .names
-            .values()
-            .filter(|n| !n.same_as.is_empty())
-            .count(),
-        names
-            .names
-            .values()
-            .filter(|n| !n.short_of.is_empty())
-            .count()
-    );
-    println!("given names without an English label: {}", graph.unlabelled);
-    println!(
-        "given-name labels failing the name rule: {}",
-        graph.rejected_labels
-    );
-    println!("languages seen: {}", graph.langs_seen.len());
-    println!(
-        "languages without a family: {} [{}]",
-        graph.langs_without_family.len(),
-        graph
-            .langs_without_family
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    println!("skips this run:");
-    for (reason, n) in &report.skipped {
-        println!("  {reason}: {n}");
-    }
-    println!("requests: {}", client.requests);
-    println!("wall time: {:.0}s", started.elapsed().as_secs_f64());
+    report.print(&pool, &names, &graph, &client, started);
     Ok(())
 }
 
@@ -248,7 +256,7 @@ fn scan(client: &mut Client, state: &State, sample: Option<usize>) -> Result<Vec
 }
 
 enum Step {
-    Skip(String),
+    Skip(Skip),
     Fatal(anyhow::Error),
 }
 
@@ -261,26 +269,26 @@ fn fetch_and_crop(
 ) -> Result<(), Step> {
     let thumb = match commons::fetch_thumb(client, thumb_url) {
         Ok(t) => t,
-        Err(FetchError::NotFound) => return Err(Step::Skip("missing-file".into())),
+        Err(FetchError::NotFound) => return Err(Step::Skip(Skip::MissingFile)),
         Err(FetchError::Transient(e)) => {
             eprintln!("  {} {e}", c.qid);
-            return Err(Step::Skip(TRANSIENT_SKIP.into()));
+            return Err(Step::Skip(Skip::FetchError));
         }
         Err(e @ FetchError::Fatal(_)) => return Err(Step::Fatal(e.into())),
     };
     let Some(img) = face::decode(&thumb.content_type, &thumb.bytes) else {
-        return Err(Step::Skip("undecodable".into()));
+        return Err(Step::Skip(Skip::Undecodable));
     };
     let found = match detector.detect(&img) {
         Outcome::One(f) => f,
-        Outcome::None => return Err(Step::Skip("no-face".into())),
+        Outcome::None => return Err(Step::Skip(Skip::NoFace)),
         Outcome::Many(n) => {
             eprintln!("  {} {n} faces", c.qid);
-            return Err(Step::Skip("many-faces".into()));
+            return Err(Step::Skip(Skip::ManyFaces));
         }
         Outcome::Small(w) => {
             eprintln!("  {} face {w} px wide", c.qid);
-            return Err(Step::Skip("small-face".into()));
+            return Err(Step::Skip(Skip::SmallFace));
         }
     };
     let crop = face::crop(&img, &found);
@@ -346,18 +354,35 @@ pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
     forms
 }
 
+pub fn name_keys(c: &Candidate) -> Vec<String> {
+    name_forms(c).into_iter().map(|(k, _)| k).collect()
+}
+
+impl Person {
+    pub fn update_from(&mut self, c: &Candidate) {
+        self.label = c.label.clone();
+        self.display = display_name(c);
+        self.names = name_keys(c);
+        self.born = c.born;
+        self.citizenship = c.citizenship.clone();
+        self.occupations = c.occupations.clone();
+        self.description = c.description.clone();
+        self.wiki = c.wiki.clone();
+    }
+}
+
 fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
-    Person {
+    let mut p = Person {
         qid: c.qid.clone(),
-        label: c.label.clone(),
-        display: display_name(c),
-        names: name_forms(c).into_iter().map(|(k, _)| k).collect(),
-        born: c.born,
-        citizenship: c.citizenship.clone(),
-        occupations: c.occupations.clone(),
-        description: c.description.clone(),
-        wiki: c.wiki.clone(),
-        crop: format!("crops/{}.jpg", c.qid),
+        label: String::new(),
+        display: String::new(),
+        names: Vec::new(),
+        born: 0,
+        citizenship: Vec::new(),
+        occupations: Vec::new(),
+        description: None,
+        wiki: None,
+        crop: crop_key(&c.qid),
         image: ImageInfo {
             file: c.file.clone(),
             artist: licence.artist.clone(),
@@ -366,18 +391,9 @@ fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
             page_url: commons::page_url(&c.file),
         },
         retired: false,
-    }
-}
-
-fn refresh(p: &mut Person, c: &Candidate) {
-    p.label = c.label.clone();
-    p.display = display_name(c);
-    p.names = name_forms(c).into_iter().map(|(k, _)| k).collect();
-    p.born = c.born;
-    p.citizenship = c.citizenship.clone();
-    p.occupations = c.occupations.clone();
-    p.description = c.description.clone();
-    p.wiki = c.wiki.clone();
+    };
+    p.update_from(c);
+    p
 }
 
 fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Result<Graph> {
@@ -395,14 +411,7 @@ fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Re
     println!("pool given names below that count: {}", extra.len());
     let rare = qlever::given_names_by_id(client, &extra)?;
     for g in common.iter().chain(rare.iter()) {
-        graph.add_given_name(&GivenName {
-            qid: g.qid.clone(),
-            label: g.label.clone(),
-            langs: g.langs.clone(),
-            count: g.count,
-            same_as: g.same_as.clone(),
-            hypocorism: g.hypocorism,
-        });
+        graph.add_given_name(g);
     }
     let qids: Vec<String> = graph.key_of_qid.keys().cloned().collect();
     for row in qlever::birth_years(client, &qids)? {
@@ -485,11 +494,7 @@ mod tests {
 
     #[test]
     fn name_forms_are_sorted_unique_normalized() {
-        let forms: Vec<String> = name_forms(&candidate())
-            .into_iter()
-            .map(|(k, _)| k)
-            .collect();
-        assert_eq!(forms, vec!["alan", "mathison", "prof"]);
+        assert_eq!(name_keys(&candidate()), vec!["alan", "mathison", "prof"]);
     }
 
     #[test]
@@ -501,8 +506,7 @@ mod tests {
         assert!(!is_nickname_form("The Prof (1950s)"));
         let mut c = candidate();
         c.nicknames = vec!["Pelé".into(), "a pequena notavel".into(), "Big Al".into()];
-        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(forms, vec!["alan", "big al", "mathison", "pele"]);
+        assert_eq!(name_keys(&c), vec!["alan", "big al", "mathison", "pele"]);
     }
 
     #[test]
@@ -510,8 +514,7 @@ mod tests {
         let mut c = candidate();
         c.givens.insert(0, ("Q1".into(), ".".into()));
         c.nicknames = vec!["The Prof (1950s)".into()];
-        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(forms, vec!["alan", "mathison"]);
+        assert_eq!(name_keys(&c), vec!["alan", "mathison"]);
         c.label = "Turing".into();
         assert_eq!(display_name(&c), "Mathison");
     }
@@ -522,17 +525,14 @@ mod tests {
         c.label = "Lady Gaga".into();
         c.givens = vec![("Q18069632".into(), "Stefani".into())];
         c.nicknames.clear();
-        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(forms, vec!["stefani"]);
+        assert_eq!(name_keys(&c), vec!["stefani"]);
         assert_eq!(display_name(&c), "Stefani");
         c.label = "Pelé".into();
         c.givens.clear();
-        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(forms, vec!["pele"]);
+        assert_eq!(name_keys(&c), vec!["pele"]);
         assert_eq!(display_name(&c), "Pelé");
         c.givens = vec![("Q1".into(), ".".into())];
-        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(forms, vec!["pele"]);
+        assert_eq!(name_keys(&c), vec!["pele"]);
     }
 
     #[test]

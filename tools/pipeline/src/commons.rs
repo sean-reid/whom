@@ -1,5 +1,6 @@
 use crate::http::{Client, FetchError};
 use crate::licence;
+use crate::store::Skip;
 use crate::text::strip_html;
 use anyhow::{anyhow, Context, Result};
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
@@ -31,7 +32,7 @@ pub struct Licence {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileStatus {
     Licensed(Licence),
-    Rejected(String),
+    Rejected(Skip),
     Missing,
 }
 
@@ -146,16 +147,16 @@ fn status_from_imageinfo(info: &Value) -> FileStatus {
         return FileStatus::Missing;
     };
     let Some(meta) = info.get("extmetadata") else {
-        return FileStatus::Rejected("licence".into());
+        return FileStatus::Rejected(Skip::Licence);
     };
     let Some(short) = meta_value(meta, "LicenseShortName")
         .map(str::trim)
         .filter(|s| !s.is_empty())
     else {
-        return FileStatus::Rejected("licence".into());
+        return FileStatus::Rejected(Skip::Licence);
     };
     if !licence::accepted(short) {
-        return FileStatus::Rejected("licence".into());
+        return FileStatus::Rejected(Skip::Licence);
     }
     let artist = meta_value(meta, "Artist")
         .map(strip_html)
@@ -247,8 +248,8 @@ mod tests {
             })
         );
         assert_eq!(m["NoThumb.jpg"], FileStatus::Missing);
-        assert_eq!(m["Fair.jpg"], FileStatus::Rejected("licence".into()));
-        assert_eq!(m["None.jpg"], FileStatus::Rejected("licence".into()));
+        assert_eq!(m["Fair.jpg"], FileStatus::Rejected(Skip::Licence));
+        assert_eq!(m["None.jpg"], FileStatus::Rejected(Skip::Licence));
         assert_eq!(m["Gone.jpg"], FileStatus::Missing);
     }
 }
