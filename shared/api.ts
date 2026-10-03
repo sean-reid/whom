@@ -1,4 +1,6 @@
 export const MAX_GUESSES = 8;
+// One slot per winning guess count, then one for a loss.
+export const RESULT_SLOTS = MAX_GUESSES + 1;
 
 export interface HealthResponse {
   ok: true;
@@ -51,7 +53,6 @@ export interface GuessResponse {
   reveal?: Reveal;
 }
 
-// counts has 9 entries: wins in 1..8, then fails.
 export interface StatsResponse {
   n: number;
   counts: number[];

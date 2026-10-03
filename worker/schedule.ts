@@ -1,5 +1,5 @@
 import type { Person } from "../shared/data.ts";
-import { hmacKey } from "./token.ts";
+import { hex, hmacKey } from "./token.ts";
 
 const encoder = new TextEncoder();
 
@@ -12,8 +12,7 @@ export async function scheduleOrder(people: Person[], seed: string): Promise<Per
         const mac = new Uint8Array(
           await crypto.subtle.sign("HMAC", key, encoder.encode(person.qid)),
         );
-        const hex = Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("");
-        return { hex, person };
+        return { hex: hex(mac), person };
       }),
   );
   keyed.sort((a, b) => (a.hex < b.hex ? -1 : a.hex > b.hex ? 1 : 0));

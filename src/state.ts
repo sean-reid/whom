@@ -1,5 +1,5 @@
 import type { Fact, Phrase, Reveal } from "../shared/api.ts";
-import { MAX_GUESSES } from "../shared/api.ts";
+import { MAX_GUESSES, RESULT_SLOTS } from "../shared/api.ts";
 
 export interface Row {
   name: string;
@@ -63,14 +63,14 @@ export function emptyStats(): Stats {
     wins: 0,
     streak: 0,
     maxStreak: 0,
-    dist: new Array<number>(MAX_GUESSES + 1).fill(0),
+    dist: new Array<number>(RESULT_SLOTS).fill(0),
     lastN: null,
   };
 }
 
 export function loadStats(): Stats {
   const stats = read<Stats>(STATS_KEY);
-  if (!stats || !Array.isArray(stats.dist) || stats.dist.length !== MAX_GUESSES + 1) {
+  if (!stats || !Array.isArray(stats.dist) || stats.dist.length !== RESULT_SLOTS) {
     return emptyStats();
   }
   return stats;

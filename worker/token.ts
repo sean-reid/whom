@@ -9,13 +9,13 @@ export interface GameToken {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-export function toBase64Url(bytes: Uint8Array): string {
+function toBase64Url(bytes: Uint8Array): string {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function fromBase64Url(s: string): Uint8Array<ArrayBuffer> | null {
+function fromBase64Url(s: string): Uint8Array<ArrayBuffer> | null {
   if (!/^[A-Za-z0-9_-]*$/.test(s)) return null;
   const b64 = s
     .replace(/-/g, "+")
@@ -41,9 +41,11 @@ export async function hmacKey(secret: string, usages: ("sign" | "verify")[]): Pr
   );
 }
 
+export const hex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
 export function newNonce(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return hex(crypto.getRandomValues(new Uint8Array(16)));
 }
 
 export async function signToken(payload: GameToken, secret: string): Promise<string> {

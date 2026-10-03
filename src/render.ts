@@ -1,5 +1,5 @@
 import type { Fact, FactKind, Reveal, StatsResponse } from "../shared/api.ts";
-import { MAX_GUESSES } from "../shared/api.ts";
+import { MAX_GUESSES, RESULT_SLOTS } from "../shared/api.ts";
 import type { Row, Stats } from "./state.ts";
 
 const LOCKED: { kind: FactKind; after: number; text: string }[] = [
@@ -42,10 +42,7 @@ export function renderRows(list: HTMLElement, rows: Row[]) {
       if (i > 0) line.append(" · ");
       line.append(p.exact ? el("b", undefined, p.text) : el("span", undefined, p.text));
     });
-    if (row.hint) {
-      line.append(" · ");
-      line.append(el("span", undefined, row.hint));
-    }
+    if (row.hint) line.append(el("span", "hint", row.hint));
     item.append(line);
     list.append(item);
   }
@@ -73,7 +70,7 @@ export function renderGuesses(lists: GuessLists, rows: Row[], done: boolean) {
   const earlier = done ? rows : rows.slice(0, -1);
   renderRows(lists.sorted, orderRows(earlier));
   renderRows(lists.latest, done || !last ? [] : [last]);
-  lists.sortedCaption.hidden = earlier.length < 2;
+  lists.sortedCaption.hidden = earlier.length < 1 || done;
   lists.latestCaption.hidden = done || !last || earlier.length === 0;
 }
 
@@ -111,7 +108,7 @@ export function renderReveal(
   page.rel = "noopener";
   page.target = "_blank";
   credit.append(page, ", ");
-  if (reveal.image.licenceUrl) {
+  if (reveal.image.licenceUrl?.startsWith("https://")) {
     const lic = el("a", undefined, reveal.image.licence);
     lic.href = reveal.image.licenceUrl;
     lic.rel = "noopener";
@@ -147,7 +144,7 @@ export function renderDist(
   slot: number,
 ) {
   grid.replaceChildren();
-  const allCounts = all?.counts ?? new Array<number>(MAX_GUESSES + 1).fill(0);
+  const allCounts = all?.counts ?? new Array<number>(RESULT_SLOTS).fill(0);
   const maxMine = Math.max(1, ...mine);
   const maxAll = Math.max(1, ...allCounts);
   for (let i = 0; i <= MAX_GUESSES; i++) {
@@ -178,11 +175,15 @@ export function formatCountdown(ms: number): string {
   return h > 0 ? `Next face in ${h}h ${m}m` : `Next face in ${m}m`;
 }
 
-export function formatIssue(n: number, date: Date): string {
-  const text = date.toLocaleDateString("en-GB", {
+export function formatDate(date: Date | number): string {
+  return new Date(date).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: typeof date === "number" ? "UTC" : undefined,
   });
-  return `No. ${n} · ${text}`;
+}
+
+export function formatIssue(n: number, date: Date): string {
+  return `No. ${n} · ${formatDate(date)}`;
 }
