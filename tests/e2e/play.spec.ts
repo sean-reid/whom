@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { GAME_KEY } from "../../src/state";
 import pool from "../fixtures/pool.json" with { type: "json" };
-import { gotoLaunchDay } from "./helpers";
+import { gotoLaunchDay, launchNumber } from "./helpers";
 
 async function openToday(page: Page) {
   await gotoLaunchDay(page);
@@ -100,4 +101,64 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
   await expect(page.locator("#guesses li .name").first()).toHaveText(winner?.display ?? "", {
     ignoreCase: true,
   });
+});
+
+const refusals = [
+  { status: 422, error: "already guessed", notice: "You already tried that one." },
+  { status: 429, error: "slow down", notice: "Slow down a little." },
+  { status: 409, error: "game over", notice: "This game is over. Reload for today's result." },
+  {
+    status: 500,
+    error: "answer has no name record",
+    notice: "That guess did not get checked, the server answered 500. Try again.",
+  },
+];
+
+// The game is seeded into storage with a token the Worker never sees: every guess here is
+// answered by a route, so none of them spends the local rate limit.
+test("a refused or lost guess leaves the board unchanged and the input ready", async ({ page }) => {
+  const game = {
+    n: launchNumber(),
+    token: "unsigned",
+    rows: [],
+    facts: [],
+    done: false,
+    won: false,
+  };
+  await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [
+    GAME_KEY,
+    JSON.stringify(game),
+  ] as const);
+  await openToday(page);
+  const board = page.locator("#guesses li, #latest li");
+
+  for (const refusal of refusals) {
+    let sent: unknown = null;
+    await page.route("**/api/guess", (route) => {
+      sent = route.request().postDataJSON();
+      return route.fulfill({
+        status: refusal.status,
+        contentType: "application/json",
+        body: JSON.stringify({ error: refusal.error }),
+      });
+    });
+    await page.fill("#guess", "Pierre");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#notice")).toHaveText(refusal.notice);
+    expect(sent).toEqual({ token: "unsigned", name: "Pierre" });
+    await expect(page.locator("#guess")).toBeEnabled();
+    await expect(page.locator("#guess")).toBeFocused();
+    await expect(board).toHaveCount(0);
+    await expect(page.locator("#remaining")).toHaveText("8 guesses left");
+    await page.unroute("**/api/guess");
+  }
+
+  await page.route("**/api/guess", (route) => route.abort("connectionfailed"));
+  await page.fill("#guess", "Pierre");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#notice")).toHaveText(
+    "That guess did not get checked, no connection. Try again.",
+  );
+  await expect(page.locator("#guess")).toBeEnabled();
+  await expect(board).toHaveCount(0);
 });

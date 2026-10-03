@@ -27,7 +27,7 @@ export interface Stats {
   lastN: number | null;
 }
 
-const GAME_KEY = "whom:game";
+export const GAME_KEY = "whom:game";
 const STATS_KEY = "whom:stats";
 const SEEN_KEY = "whom:seen";
 
