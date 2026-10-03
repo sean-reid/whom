@@ -14,11 +14,24 @@ export function answerRecord(answer: Person, names: NamesFile): NameRecord | und
   return undefined;
 }
 
+// Grades a person the name graph has not caught up with yet.
+export function fallbackRecord(answer: Person): NameRecord {
+  return {
+    display: answer.display,
+    langs: [],
+    families: [],
+    count: 0,
+    dm: "",
+    rhyme: "",
+    era: null,
+  };
+}
+
 export function isWin(guess: string, answer: Person): boolean {
   return answer.names.includes(guess);
 }
 
-const letters = (name: string): number => name.replace(/[\s-]/g, "").length;
+const letters = (name: string): number => name.replace(/[\s'\u2018\u2019-]/g, "").length;
 
 function lengthPhrase(guess: string, answer: string): Phrase {
   const diff = letters(answer) - letters(guess);
@@ -28,9 +41,30 @@ function lengthPhrase(guess: string, answer: string): Phrase {
   return { text: word ? `${word} ${side}` : `much ${side}`, exact: false };
 }
 
+// NFKD leaves these letters whole; the pipeline folds them the same way in text.rs.
+const FOLDED: Record<string, string> = {
+  ł: "l",
+  ø: "o",
+  ɔ: "o",
+  đ: "d",
+  ð: "d",
+  æ: "a",
+  œ: "o",
+  ß: "s",
+  þ: "t",
+  ı: "i",
+  ħ: "h",
+  ŧ: "t",
+};
+
+const firstLetter = (name: string): number => {
+  const first = String.fromCodePoint(name.codePointAt(0) ?? 0);
+  return (FOLDED[first] ?? first).codePointAt(0) ?? 0;
+};
+
 function firstLetterPhrase(guess: string, answer: string): Phrase {
-  const g = guess.codePointAt(0) ?? 0;
-  const a = answer.codePointAt(0) ?? 0;
+  const g = firstLetter(guess);
+  const a = firstLetter(answer);
   if (g === a) return { text: "same first letter", exact: true };
   return { text: a < g ? "starts earlier" : "starts later", exact: false };
 }
@@ -52,6 +86,7 @@ function languagePhrase(
 }
 
 function soundPhrase(guess: NameRecord, answer: NameRecord): Phrase {
+  if (guess.dm === "" || answer.dm === "") return { text: "sound unknown", exact: false };
   if (guess.dm === answer.dm) return { text: "sounds the same", exact: true };
   if (guess.dm.charAt(0) === answer.dm.charAt(0))
     return { text: "starts with the same sound", exact: false };

@@ -14,8 +14,16 @@
   "preview_urls": true,
   "routes": [{ "pattern": "whom.dwainosaur.com", "custom_domain": true }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "whom" }],
-  "durable_objects": { "bindings": [{ "name": "PUZZLES", "class_name": "Puzzle" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Puzzle"] }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "PUZZLES", "class_name": "Puzzle" },
+      { "name": "SCHEDULE", "class_name": "Schedule" },
+    ],
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Puzzle"] },
+    { "tag": "v2", "new_sqlite_classes": ["Schedule"] },
+  ],
   "ratelimits": [
     { "name": "GUESS_RATE", "namespace_id": "1", "simple": { "limit": 30, "period": 60 } },
   ],

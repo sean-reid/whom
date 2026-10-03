@@ -11,26 +11,37 @@ export class Puzzle extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS results (bucket INTEGER PRIMARY KEY, count INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS keys (key TEXT PRIMARY KEY);
     `);
   }
 
-  pin(qid: string): string {
+  // The pin this object made before Schedule held them; Schedule adopts it for the day.
+  legacyPin(): string | null {
     const row = this.ctx.storage.sql
       .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'qid'")
       .toArray()[0];
-    if (row) return row.value;
-    this.ctx.storage.sql.exec("INSERT INTO meta (key, value) VALUES ('qid', ?)", qid);
-    return qid;
+    return row ? row.value : null;
   }
 
-  record(nonce: string, bucket: number): boolean {
-    if (!Number.isInteger(bucket) || bucket < 0 || bucket >= BUCKETS) return false;
-    const inserted = this.ctx.storage.sql.exec(
-      "INSERT OR IGNORE INTO nonces (nonce) VALUES (?)",
-      nonce,
-    ).rowsWritten;
-    if (inserted === 0) return false;
-    this.ctx.storage.sql.exec(
+  recorded(nonce: string): boolean {
+    return (
+      this.ctx.storage.sql.exec("SELECT 1 FROM nonces WHERE nonce = ?", nonce).toArray().length > 0
+    );
+  }
+
+  // A nonce finishes once; the first finish per client key is the one that counts.
+  record(nonce: string, key: string, bucket: number): boolean {
+    if (!Number.isInteger(bucket) || bucket < 0 || bucket >= BUCKETS) {
+      throw new RangeError(`bucket ${bucket} is outside 0..${BUCKETS - 1}`);
+    }
+    const sql = this.ctx.storage.sql;
+    if (sql.exec("INSERT OR IGNORE INTO nonces (nonce) VALUES (?)", nonce).rowsWritten === 0) {
+      return false;
+    }
+    if (sql.exec("INSERT OR IGNORE INTO keys (key) VALUES (?)", key).rowsWritten === 0) {
+      return true;
+    }
+    sql.exec(
       "INSERT INTO results (bucket, count) VALUES (?, 1) ON CONFLICT (bucket) DO UPDATE SET count = count + 1",
       bucket,
     );
