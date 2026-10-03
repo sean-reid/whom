@@ -19,4 +19,6 @@ npm run test:e2e   # Playwright against a local build
 
 One Cloudflare Worker serves the static build and the `/api` routes. Guesses are graded on the Worker against a signed game token; the answer never reaches the browser before the game ends. A Durable Object per puzzle pins the day's person the first time it is served and keeps the result distribution. Portraits and the name graph live in R2 and are produced by the Rust tool under `tools/pipeline`, which runs quarterly from GitHub Actions and fetches from Commons one request at a time. The Worker reads two secrets, `SESSION_SECRET` for tokens and `PUZZLE_SEED` for the schedule, which the deploy workflow copies from the Actions secrets of the same names on every deploy.
 
+To run the pipeline locally: `cd tools/pipeline && cargo run --release -- run --sample 20 --out out/`. It scans QLever one page a second, fetches from Commons one request every 1.5 seconds, stops after three 429s in a row, and caps image fetches per run with `--max-fetch` (default 4000). It resumes from `out/state.json`, so a second run never refetches a person it has seen.
+
 Deploys happen from GitHub Actions on every green merge to `main`. Releases are cut by release-please from the conventional commit history.
