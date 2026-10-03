@@ -68,8 +68,8 @@ pub fn licences(client: &mut Client, files: &[String]) -> Result<BTreeMap<String
             .collect();
         let joined = titles.join("|");
         let resp = client
-            .send(API, |c| {
-                c.get(API).query(&[
+            .send(API, |c, u| {
+                c.get(u).query(&[
                     ("action", "query"),
                     ("prop", "imageinfo"),
                     ("iiprop", "extmetadata"),

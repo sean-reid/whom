@@ -35,8 +35,8 @@ impl R2 {
     ) -> Result<()> {
         let url = self.url(key);
         client
-            .send(&url, |c| {
-                c.put(&url)
+            .send(&url, |c, u| {
+                c.put(u)
                     .bearer_auth(&self.token)
                     .header("Content-Type", content_type)
                     .body(body.clone())
@@ -47,7 +47,7 @@ impl R2 {
 
     pub fn get(&self, client: &mut Client, key: &str) -> Result<Option<Vec<u8>>> {
         let url = self.url(key);
-        match client.send(&url, |c| c.get(&url).bearer_auth(&self.token)) {
+        match client.send(&url, |c, u| c.get(u).bearer_auth(&self.token)) {
             Ok(resp) => Ok(Some(resp.bytes().context("read body")?.to_vec())),
             Err(FetchError::NotFound) => Ok(None),
             Err(e) => Err(anyhow!("get {key}: {e}")),

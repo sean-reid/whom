@@ -35,8 +35,8 @@ pub struct Candidate {
 pub fn query(client: &mut Client, sparql: &str) -> Result<Vec<Row>> {
     let full = format!("{PREFIXES}{sparql}");
     let resp = client
-        .send(ENDPOINT, |c| {
-            c.get(ENDPOINT)
+        .send(ENDPOINT, |c, u| {
+            c.get(u)
                 .query(&[("query", full.as_str())])
                 .header("Accept", "application/sparql-results+json")
         })
