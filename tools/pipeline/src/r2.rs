@@ -1,6 +1,14 @@
 use crate::http::{Client, FetchError};
 use anyhow::{anyhow, bail, Context, Result};
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use std::path::Path;
+
+const KEY_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~')
+    .remove(b'/');
 
 pub const BUCKET: &str = "whom";
 
@@ -21,8 +29,9 @@ impl R2 {
 
     fn url(&self, key: &str) -> String {
         format!(
-            "https://api.cloudflare.com/client/v4/accounts/{}/r2/buckets/{BUCKET}/objects/{key}",
-            self.account
+            "https://api.cloudflare.com/client/v4/accounts/{}/r2/buckets/{BUCKET}/objects/{}",
+            self.account,
+            utf8_percent_encode(key, KEY_SET)
         )
     }
 
@@ -60,5 +69,23 @@ pub fn content_type_for(path: &Path) -> &'static str {
         Some("json") => "application/json",
         Some("jpg") | Some("jpeg") => "image/jpeg",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn object_keys_keep_slashes_and_encode_the_rest() {
+        let r2 = R2 {
+            account: "acct".into(),
+            token: String::new(),
+        };
+        assert_eq!(
+            r2.url("crops/Q42.jpg"),
+            "https://api.cloudflare.com/client/v4/accounts/acct/r2/buckets/whom/objects/crops/Q42.jpg"
+        );
+        assert!(r2.url("a b?c#d").ends_with("/objects/a%20b%3Fc%23d"));
     }
 }

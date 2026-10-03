@@ -87,10 +87,8 @@ fn upload(out: &Path) -> Result<()> {
     let mut n = 0;
     for key in &keys {
         let path = out.join(key);
-        let Ok(body) = std::fs::read(&path) else {
-            eprintln!("  missing {}, not uploaded", path.display());
-            continue;
-        };
+        let body =
+            std::fs::read(&path).with_context(|| format!("read {} for upload", path.display()))?;
         bucket.put(&mut client, key, body, r2::content_type_for(&path))?;
         n += 1;
     }
