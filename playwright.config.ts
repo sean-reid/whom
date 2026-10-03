@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { E2E_SEED } from "./tests/e2e/helpers";
 
 const port = 8787;
 const apiPort = 8788;
-const vars = "--var SESSION_SECRET:e2e-session --var PUZZLE_SEED:e2e-seed";
+const vars = `--var SESSION_SECRET:e2e-session --var PUZZLE_SEED:${E2E_SEED}`;
 const states = [".wrangler/state", ".wrangler/state-api"];
 const seed = states.map((state) => `node scripts/seed-local.mjs ${state}`).join(" && ");
 const dev = (p: number, state: string) =>

@@ -1,14 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { EPOCH, parseIsoDate } from "../../shared/day";
 import pool from "../fixtures/pool.json" with { type: "json" };
+import { gotoLaunchDay } from "./helpers";
 
-const DAY_MS = 86_400_000;
-
-// The client reads its own clock, so before launch day the browser is moved to the first puzzle.
 async function openToday(page: Page) {
-  const epoch = parseIsoDate(EPOCH) ?? 0;
-  if (Date.now() < epoch) await page.clock.install({ time: new Date(epoch + DAY_MS / 2) });
-  await page.goto("/");
+  await gotoLaunchDay(page);
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await expect(page.locator("#guess-form")).toBeVisible();
   await expect

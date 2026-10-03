@@ -1,10 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { EPOCH, parseIsoDate } from "../../shared/day";
+import { gotoLaunchDay } from "./helpers";
 
 test("the front page loads with the wordmark and today's number", async ({ page }, info) => {
-  const epoch = parseIsoDate(EPOCH) ?? 0;
-  if (Date.now() < epoch) await page.clock.install({ time: new Date(epoch + 43_200_000) });
-  await page.goto("/");
+  await gotoLaunchDay(page);
   await expect(page).toHaveTitle("WHOM?");
   await expect(page.locator(".wordmark")).toHaveText("WHOM?");
   await expect(page.locator("#issue")).toHaveText(/^No\. \d+ · \d{1,2} \w{3} \d{4}$/);

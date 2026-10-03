@@ -1,6 +1,6 @@
 export const EPOCH = "2026-10-03";
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseIsoDate(s: string): number | null {
