@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { MAX_GUESSES } from "../../shared/api";
 import type { GuessResponse, PuzzleResponse, StatsResponse } from "../../shared/api";
-import type { NamesFile, PoolFile } from "../../shared/data";
+import type { NamesFile, Person, PoolFile } from "../../shared/data";
 import { latestAllowedNumber, puzzleNumber } from "../../shared/day";
 import { normalizeName } from "../../shared/names";
 import { personForNumber, scheduleOrder } from "../../worker/schedule";
@@ -38,6 +38,12 @@ function rootPartner(answer: string): string | undefined {
     (key) => key !== answer && (linked(key, answer) || linked(answer, key)),
   );
 }
+
+// The answer the Worker pins for n, since nothing earlier is pinned in a fresh state.
+let answer: Person;
+test.beforeAll(async () => {
+  answer = personForNumber(await scheduleOrder((pool as PoolFile).people, SEED), n);
+});
 
 async function newGame(request: APIRequestContext): Promise<PuzzleResponse> {
   const res = await request.get(`/api/puzzle?date=${date}`);
@@ -107,7 +113,7 @@ test("a lost game grades every miss, drips facts, and counts once", async ({ req
   expect(last?.done).toBe(true);
   expect(last?.won).toBe(false);
   expect(last?.facts.find((f) => f.kind === "born")?.text).toMatch(/^Born in the \d{3}0s$/);
-  expect(last?.reveal?.label).toBeTruthy();
+  expect(last?.reveal?.label).toBe(answer.label);
   expect(JSON.stringify({ ...last, token: "" })).not.toMatch(/Q\d+/);
 
   const repeat = await guess(request, penultimate, "Ellen");
@@ -121,9 +127,9 @@ test("a lost game grades every miss, drips facts, and counts once", async ({ req
   expect(after.counts[MAX_GUESSES]).toBe((before.counts[MAX_GUESSES] ?? 0) + 1);
 });
 
-test("a repeated guess is 422 and the right name wins with a reveal", async ({ request }) => {
-  const order = await scheduleOrder((pool as PoolFile).people, SEED);
-  const answer = personForNumber(order, n);
+test("a repeated guess is 422 and the right name wins with the same reveal", async ({
+  request,
+}) => {
   const { token } = await newGame(request);
   const first = await guess(request, token, "Pierre");
   const again = await guess(request, first.body.token, "pierre");

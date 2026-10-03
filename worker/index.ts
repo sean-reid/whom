@@ -13,8 +13,8 @@ import { normalizeName } from "../shared/names.ts";
 import { findPerson, loadData, type Loaded } from "./data.ts";
 import type { Env } from "./env.ts";
 import { newNonce, signToken, verifyToken } from "./token.ts";
-import { personForNumber } from "./schedule.ts";
 
+export { Schedule } from "./pins.ts";
 export { Puzzle } from "./puzzle.ts";
 
 const DAY = "public, max-age=86400";
@@ -41,6 +41,7 @@ const json = (body: unknown, status = 200, cache = "no-store"): Response =>
 const error = (message: string, status: number): Response => json({ error: message }, status);
 
 const puzzleStub = (env: Env, n: number) => env.PUZZLES.get(env.PUZZLES.idFromName(String(n)));
+const scheduleStub = (env: Env) => env.SCHEDULE.get(env.SCHEDULE.idFromName("schedule"));
 
 // A pin never changes once made, so each isolate asks the Durable Object once per puzzle.
 const pins = new Map<number, string>();
@@ -53,8 +54,11 @@ async function answerFor(
 ): Promise<{ answer: Person; data: Loaded }> {
   let qid = pins.get(n);
   if (qid === undefined) {
-    const candidate = personForNumber((await loadData(env, ctx)).order, n);
-    qid = await puzzleStub(env, n).pin(candidate.qid);
+    const order = (await loadData(env, ctx)).order;
+    qid = await scheduleStub(env).pin(
+      n,
+      order.map((p) => p.qid),
+    );
     pins.set(n, qid);
   }
   const found = await findPerson(env, ctx, qid);

@@ -8,19 +8,9 @@ export class Puzzle extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS results (bucket INTEGER PRIMARY KEY, count INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY);
     `);
-  }
-
-  pin(qid: string): string {
-    const row = this.ctx.storage.sql
-      .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'qid'")
-      .toArray()[0];
-    if (row) return row.value;
-    this.ctx.storage.sql.exec("INSERT INTO meta (key, value) VALUES ('qid', ?)", qid);
-    return qid;
   }
 
   record(nonce: string, bucket: number): boolean {

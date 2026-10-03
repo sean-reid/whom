@@ -19,8 +19,30 @@ export async function scheduleOrder(people: Person[], seed: string): Promise<Per
   return keyed.map((k) => k.person);
 }
 
-export function personForNumber(order: Person[], n: number): Person {
-  if (order.length === 0) throw new Error("empty schedule");
-  const i = (((n - 1) % order.length) + order.length) % order.length;
-  return order[i] as Person;
+export function qidForNumber(
+  qids: string[],
+  n: number,
+  pinned: ReadonlySet<string> = new Set(),
+): string {
+  if (qids.length === 0) throw new Error("empty schedule");
+  const start = (((n - 1) % qids.length) + qids.length) % qids.length;
+  for (let i = 0; i < qids.length; i++) {
+    const qid = qids[(start + i) % qids.length] as string;
+    if (!pinned.has(qid)) return qid;
+  }
+  // Every face has been served, so the schedule laps and repeats in order.
+  return qids[start] as string;
+}
+
+export function personForNumber(
+  order: Person[],
+  n: number,
+  pinned: ReadonlySet<string> = new Set(),
+): Person {
+  const qid = qidForNumber(
+    order.map((p) => p.qid),
+    n,
+    pinned,
+  );
+  return order.find((p) => p.qid === qid) as Person;
 }
