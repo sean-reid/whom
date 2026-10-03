@@ -20,10 +20,26 @@ const alan = rec({
   count: 31000,
   dm: "ALN",
   rhyme: "LN",
+  era: 1952,
+  sameAs: ["allan", "allen"],
 });
-const alec = rec({ display: "Alec", count: 2100, dm: "ALK", rhyme: "LK" });
-const william = rec({ display: "William", count: 210000, dm: "ALM", rhyme: "LM" });
-const edward = rec({ display: "Edward", count: 50000, dm: "ATRT", rhyme: "RT" });
+const alec = rec({ display: "Alec", count: 2100, dm: "ALK", rhyme: "LK", era: 1948 });
+const william = rec({
+  display: "William",
+  count: 210000,
+  dm: "ALM",
+  rhyme: "LM",
+  era: 1925,
+});
+const edward = rec({ display: "Edward", count: 50000, dm: "ATRT", rhyme: "RT", era: 1920 });
+const bill = rec({
+  display: "Bill",
+  count: 9000,
+  dm: "PL",
+  rhyme: "PL",
+  era: 1935,
+  shortOf: ["william"],
+});
 
 const texts = (p: ReturnType<typeof phrases>) => p.map((x) => x.text);
 
@@ -36,8 +52,9 @@ describe("phrases", () => {
       "same language (English)",
       "starts with the same sound",
       "much rarer",
+      "a newer name",
     ]);
-    expect(p.map((x) => x.exact)).toEqual([false, false, true, false, false]);
+    expect(p.map((x) => x.exact)).toEqual([false, false, true, false, false, false]);
   });
   it("grades Alec against Alan", () => {
     const p = phrases("alec", alec, "alan", alan, languages);
@@ -47,6 +64,7 @@ describe("phrases", () => {
       "same language (English)",
       "starts with the same sound",
       "much more common",
+      "same era",
     ]);
   });
   it("grades Edward against Alan", () => {
@@ -56,6 +74,7 @@ describe("phrases", () => {
       "same language (English)",
       "starts with the same sound",
       "rarer",
+      "a newer name",
     ]);
   });
   it("counts length differences up to five and then says much", () => {
@@ -115,6 +134,72 @@ describe("phrases", () => {
       text: "equally common",
       exact: true,
     });
+  });
+  it("calls eras within ten years the same and names the answer's direction", () => {
+    const era = (year: number) => rec({ era: year });
+    expect(phrases("g", era(1950), "a", era(1960), languages)[5]).toEqual({
+      text: "same era",
+      exact: true,
+    });
+    expect(phrases("g", era(1950), "a", era(1940), languages)[5]?.text).toBe("same era");
+    expect(phrases("g", era(1950), "a", era(1939), languages)[5]).toEqual({
+      text: "an older name",
+      exact: false,
+    });
+    expect(phrases("g", era(1950), "a", era(1961), languages)[5]?.text).toBe("a newer name");
+    expect(phrases("william", william, "alan", alan, languages)[5]?.text).toBe("a newer name");
+    expect(phrases("alan", alan, "william", william, languages)[5]?.text).toBe("an older name");
+  });
+  it("says era unknown when either side has no era", () => {
+    const blank = rec();
+    const nulled = rec({ era: null });
+    const unknown = { text: "era unknown", exact: false };
+    expect(phrases("g", blank, "a", alan, languages)[5]).toEqual(unknown);
+    expect(phrases("g", alan, "a", nulled, languages)[5]).toEqual(unknown);
+    expect(phrases("g", blank, "a", nulled, languages)[5]).toEqual(unknown);
+  });
+  it("links forms of the same name from either side's sameAs", () => {
+    const allan = rec({ display: "Allan", sameAs: ["alan"] });
+    const allen = rec({ display: "Allen" });
+    const same = { text: "a form of the same name", exact: true };
+    expect(phrases("allan", allan, "alan", alan, languages)[6]).toEqual(same);
+    expect(phrases("alan", alan, "allan", allan, languages)[6]).toEqual(same);
+    expect(phrases("allen", allen, "alan", alan, languages)[6]).toEqual(same);
+    expect(phrases("alan", alan, "allen", allen, languages)[6]).toEqual(same);
+  });
+  it("names which side is the short form", () => {
+    expect(phrases("bill", bill, "william", william, languages)[6]).toEqual({
+      text: "your guess is a short form of the answer",
+      exact: true,
+    });
+    expect(phrases("william", william, "bill", bill, languages)[6]).toEqual({
+      text: "the answer is a short form of your guess",
+      exact: true,
+    });
+  });
+  it("prefers sameAs over shortOf when both apply", () => {
+    const will = rec({ display: "Will", sameAs: ["william"], shortOf: ["william"] });
+    expect(phrases("will", will, "william", william, languages)[6]?.text).toBe(
+      "a form of the same name",
+    );
+  });
+  it("adds no root phrase when the names are unrelated", () => {
+    expect(phrases("william", william, "alan", alan, languages)).toHaveLength(6);
+    expect(phrases("bill", bill, "alan", alan, languages)).toHaveLength(6);
+  });
+  it("grades records without era, sameAs, or shortOf", () => {
+    const old = {
+      display: "Old",
+      langs: ["Q1860"],
+      families: ["germanic"],
+      count: 5,
+      dm: "AL",
+      rhyme: "L",
+    };
+    const p = phrases("old", old, "alan", alan, languages);
+    expect(p).toHaveLength(6);
+    expect(p[5]).toEqual({ text: "era unknown", exact: false });
+    expect(phrases("old", old, "old", old, languages).every((x) => x.exact)).toBe(true);
   });
 });
 

@@ -28,6 +28,9 @@ export interface NameRecord {
   count: number;
   dm: string;
   rhyme: string;
+  era?: number | null;
+  sameAs?: string[];
+  shortOf?: string[];
 }
 
 export interface NamesFile {
