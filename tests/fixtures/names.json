@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "languages": {
+    "Q1860": "English",
+    "Q150": "French",
+    "Q1321": "Spanish",
+    "Q188": "German",
+    "Q652": "Italian",
+    "Q9056": "Czech",
+    "Q7411": "Dutch",
+    "Q5146": "Portuguese",
+    "Q809": "Polish",
+    "Q9035": "Danish",
+    "Q9027": "Swedish",
+    "Q9067": "Hungarian"
+  },
+  "names": {
+    "alan": {
+      "display": "Alan",
+      "langs": ["Q1860", "Q150"],
+      "families": ["germanic", "romance"],
+      "count": 31000,
+      "dm": "ALN",
+      "rhyme": "LN"
+    },
+    "alec": {
+      "display": "Alec",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 2100,
+      "dm": "ALK",
+      "rhyme": "LK"
+    },
+    "william": {
+      "display": "William",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 210000,
+      "dm": "ALM",
+      "rhyme": "LM"
+    },
+    "edward": {
+      "display": "Edward",
+      "langs": ["Q1860", "Q809"],
+      "families": ["germanic", "slavic"],
+      "count": 66000,
+      "dm": "ATRT",
+      "rhyme": "RT"
+    },
+    "grace": {
+      "display": "Grace",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 9000,
+      "dm": "KRS",
+      "rhyme": "RS"
+    },
+    "nelson": {
+      "display": "Nelson",
+      "langs": ["Q1860", "Q5146"],
+      "families": ["germanic", "romance"],
+      "count": 5200,
+      "dm": "NLSN",
+      "rhyme": "SN"
+    },
+    "audrey": {
+      "display": "Audrey",
+      "langs": ["Q1860", "Q150"],
+      "families": ["germanic", "romance"],
+      "count": 4300,
+      "dm": "ATR",
+      "rhyme": "TR"
+    },
+    "frida": {
+      "display": "Frida",
+      "langs": ["Q188", "Q9027", "Q9035"],
+      "families": ["germanic"],
+      "count": 2600,
+      "dm": "FRT",
+      "rhyme": "RT"
+    },
+    "ellen": {
+      "display": "Ellen",
+      "langs": ["Q1860", "Q9027"],
+      "families": ["germanic"],
+      "count": 17000,
+      "dm": "ALN",
+      "rhyme": "LN"
+    },
+    "helen": {
+      "display": "Helen",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 24000,
+      "dm": "HLN",
+      "rhyme": "LN"
+    },
+    "alain": {
+      "display": "Alain",
+      "langs": ["Q150"],
+      "families": ["romance"],
+      "count": 22000,
+      "dm": "ALN",
+      "rhyme": "LN"
+    },
+    "allan": {
+      "display": "Allan",
+      "langs": ["Q1860", "Q9035"],
+      "families": ["germanic"],
+      "count": 8000,
+      "dm": "ALN",
+      "rhyme": "LN"
+    },
+    "allen": {
+      "display": "Allen",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 6000,
+      "dm": "ALN",
+      "rhyme": "LN"
+    },
+    "ian": {
+      "display": "Ian",
+      "langs": ["Q1860"],
+      "families": ["germanic", "celtic"],
+      "count": 15000,
+      "dm": "AN",
+      "rhyme": "AN"
+    },
+    "maria": {
+      "display": "Maria",
+      "langs": ["Q1321", "Q652", "Q5146", "Q188"],
+      "families": ["romance", "germanic"],
+      "count": 420000,
+      "dm": "MR",
+      "rhyme": "MR"
+    },
+    "marie": {
+      "display": "Marie",
+      "langs": ["Q150", "Q9056"],
+      "families": ["romance", "slavic"],
+      "count": 160000,
+      "dm": "MR",
+      "rhyme": "MR"
+    },
+    "mary": {
+      "display": "Mary",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 120000,
+      "dm": "MR",
+      "rhyme": "MR"
+    },
+    "jose": {
+      "display": "José",
+      "langs": ["Q1321", "Q5146"],
+      "families": ["romance"],
+      "count": 330000,
+      "dm": "HS",
+      "rhyme": "HS"
+    },
+    "antonin": {
+      "display": "Antonín",
+      "langs": ["Q9056", "Q150"],
+      "families": ["slavic", "romance"],
+      "count": 7000,
+      "dm": "ANTN",
+      "rhyme": "TN"
+    },
+    "john": {
+      "display": "John",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 480000,
+      "dm": "JN",
+      "rhyme": "JN"
+    },
+    "jean": {
+      "display": "Jean",
+      "langs": ["Q150"],
+      "families": ["romance"],
+      "count": 250000,
+      "dm": "JN",
+      "rhyme": "JN"
+    },
+    "juan": {
+      "display": "Juan",
+      "langs": ["Q1321"],
+      "families": ["romance"],
+      "count": 200000,
+      "dm": "JN",
+      "rhyme": "JN"
+    },
+    "pierre": {
+      "display": "Pierre",
+      "langs": ["Q150"],
+      "families": ["romance"],
+      "count": 110000,
+      "dm": "PR",
+      "rhyme": "PR"
+    },
+    "carlos": {
+      "display": "Carlos",
+      "langs": ["Q1321", "Q5146"],
+      "families": ["romance"],
+      "count": 180000,
+      "dm": "KRLS",
+      "rhyme": "LS"
+    },
+    "anna": {
+      "display": "Anna",
+      "langs": ["Q188", "Q652", "Q809", "Q9027"],
+      "families": ["germanic", "romance", "slavic"],
+      "count": 210000,
+      "dm": "AN",
+      "rhyme": "AN"
+    },
+    "ann": {
+      "display": "Ann",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 19000,
+      "dm": "AN",
+      "rhyme": "AN"
+    },
+    "nicolas": {
+      "display": "Nicolas",
+      "langs": ["Q150", "Q1321"],
+      "families": ["romance"],
+      "count": 60000,
+      "dm": "NKLS",
+      "rhyme": "LS"
+    },
+    "sean": {
+      "display": "Seán",
+      "langs": ["Q1860"],
+      "families": ["germanic", "celtic"],
+      "count": 14000,
+      "dm": "SN",
+      "rhyme": "SN"
+    },
+    "giovanni": {
+      "display": "Giovanni",
+      "langs": ["Q652"],
+      "families": ["romance"],
+      "count": 95000,
+      "dm": "JFN",
+      "rhyme": "FN"
+    },
+    "laszlo": {
+      "display": "László",
+      "langs": ["Q9067"],
+      "families": [],
+      "count": 21000,
+      "dm": "LSL",
+      "rhyme": "SL"
+    },
+    "ada": {
+      "display": "Ada",
+      "langs": ["Q1860", "Q652"],
+      "families": ["germanic", "romance"],
+      "count": 3800,
+      "dm": "AT",
+      "rhyme": "AT"
+    },
+    "jean-paul": {
+      "display": "Jean-Paul",
+      "langs": ["Q150"],
+      "families": ["romance"],
+      "count": 9500,
+      "dm": "JNPL",
+      "rhyme": "PL"
+    }
+  }
+}

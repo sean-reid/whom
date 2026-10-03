@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "generated": "2026-10-01",
+  "people": [
+    {
+      "qid": "Q7251",
+      "label": "Alan Turing",
+      "display": "Alan",
+      "names": ["alan"],
+      "born": 1912,
+      "citizenship": ["United Kingdom"],
+      "occupations": ["mathematician", "computer scientist"],
+      "description": "English mathematician and computer scientist (1912–1954)",
+      "wiki": "Alan_Turing",
+      "crop": "crops/Q7251.jpg",
+      "image": {
+        "file": "Alan Turing (1951) (crop).jpg",
+        "artist": "Elliott & Fry",
+        "licence": "Public domain",
+        "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Alan_Turing_(1951)_(crop).jpg"
+      }
+    },
+    {
+      "qid": "Q11641",
+      "label": "Grace Hopper",
+      "display": "Grace",
+      "names": ["grace"],
+      "born": 1906,
+      "citizenship": ["United States of America"],
+      "occupations": ["computer scientist", "naval officer", "mathematician"],
+      "description": "American computer scientist and United States Navy rear admiral (1906–1992)",
+      "wiki": "Grace_Hopper",
+      "crop": "crops/Q11641.jpg",
+      "image": {
+        "file": "Commodore Grace M. Hopper, USN (covered).jpg",
+        "artist": "James S. Davis",
+        "licence": "Public domain",
+        "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Commodore_Grace_M._Hopper,_USN_(covered).jpg"
+      }
+    },
+    {
+      "qid": "Q8023",
+      "label": "Nelson Mandela",
+      "display": "Nelson",
+      "names": ["nelson"],
+      "born": 1918,
+      "citizenship": ["South Africa"],
+      "occupations": ["politician", "lawyer"],
+      "description": "President of South Africa from 1994 to 1999 (1918–2013)",
+      "wiki": "Nelson_Mandela",
+      "crop": "crops/Q8023.jpg",
+      "image": {
+        "file": "Nelson Mandela 1994.jpg",
+        "artist": "John Mathew Smith",
+        "licence": "CC BY-SA 2.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by-sa/2.0/",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Nelson_Mandela_1994.jpg"
+      }
+    },
+    {
+      "qid": "Q42786",
+      "label": "Audrey Hepburn",
+      "display": "Audrey",
+      "names": ["audrey"],
+      "born": 1929,
+      "citizenship": ["United Kingdom", "Netherlands"],
+      "occupations": ["actress"],
+      "description": "British actress and humanitarian (1929–1993)",
+      "wiki": "Audrey_Hepburn",
+      "crop": "crops/Q42786.jpg",
+      "image": {
+        "file": "Audrey Hepburn 1956.jpg",
+        "artist": "Bud Fraker",
+        "licence": "Public domain",
+        "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Audrey_Hepburn_1956.jpg"
+      }
+    },
+    {
+      "qid": "Q5588",
+      "label": "Frida Kahlo",
+      "display": "Frida",
+      "names": ["frida"],
+      "born": 1907,
+      "citizenship": ["Mexico"],
+      "occupations": ["painter"],
+      "description": "Mexican painter (1907–1954)",
+      "wiki": "Frida_Kahlo",
+      "crop": "crops/Q5588.jpg",
+      "image": {
+        "file": "Frida Kahlo, by Guillermo Kahlo.jpg",
+        "artist": "Guillermo Kahlo",
+        "licence": "Public domain",
+        "licenceUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Frida_Kahlo,_by_Guillermo_Kahlo.jpg"
+      }
+    }
+  ]
+}
