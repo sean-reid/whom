@@ -13,7 +13,7 @@ npm test           # unit tests
 npm run test:e2e   # Playwright against a local build
 ```
 
-CI runs `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`, `npm run size`, `npm audit --audit-level=high`, `npm run test:e2e`, and `cargo fmt --check`, `cargo clippy`, and `cargo test` under tools/pipeline. The size check fails when first-load JavaScript passes 25 KB gzipped.
+CI runs `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`, `npm run size`, `npm run audit`, `npm run e2e:install`, `npm run test:e2e`, and `cargo fmt --check`, `cargo clippy`, and `cargo test` under tools/pipeline. The size check fails when first-load JavaScript passes 25 KB gzipped.
 
 ## How it runs
 
