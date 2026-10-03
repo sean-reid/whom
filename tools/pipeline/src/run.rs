@@ -289,15 +289,29 @@ pub fn display_name(c: &Candidate) -> String {
         .unwrap_or_else(|| token.to_string())
 }
 
+const MAX_NICKNAME_WORDS: usize = 2;
+
+// A P1449 nickname counts as a name form only when it is short enough to
+// be one; longer values are sobriquets.
+pub fn is_nickname_form(s: &str) -> bool {
+    is_name_label(s) && s.split_whitespace().count() <= MAX_NICKNAME_WORDS
+}
+
 pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
     let mut forms: Vec<(String, String)> = Vec::new();
     let sources = c
         .givens
         .iter()
-        .map(|(_, l)| l.as_str())
-        .chain(c.nicknames.iter().map(String::as_str))
-        .chain(first_token(&c.label));
-    for s in sources.map(str::trim).filter(|s| is_name_label(s)) {
+        .map(|(_, l)| l.trim())
+        .filter(|l| is_name_label(l))
+        .chain(
+            c.nicknames
+                .iter()
+                .map(|n| n.trim())
+                .filter(|n| is_nickname_form(n)),
+        )
+        .chain(first_token(&c.label).filter(|t| is_name_label(t)));
+    for s in sources {
         let n = normalize(s);
         if !forms.iter().any(|(k, _)| *k == n) {
             forms.push((n, s.trim().to_string()));
@@ -451,6 +465,19 @@ mod tests {
             .map(|(k, _)| k)
             .collect();
         assert_eq!(forms, vec!["alan", "mathison", "prof"]);
+    }
+
+    #[test]
+    fn nicknames_are_capped_at_two_words() {
+        assert!(is_nickname_form("Bill"));
+        assert!(is_nickname_form("Pelé"));
+        assert!(is_nickname_form("Fed Express"));
+        assert!(!is_nickname_form("a pequena notavel"));
+        assert!(!is_nickname_form("The Prof (1950s)"));
+        let mut c = candidate();
+        c.nicknames = vec!["Pelé".into(), "a pequena notavel".into(), "Big Al".into()];
+        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(forms, vec!["alan", "big al", "mathison", "pele"]);
     }
 
     #[test]
