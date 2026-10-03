@@ -1,17 +1,32 @@
+import { readdirSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
 const port = 8787;
 const apiPort = 8788;
 const vars = "--var SESSION_SECRET:e2e-session --var PUZZLE_SEED:e2e-seed";
+const states = [".wrangler/state", ".wrangler/state-api"];
+const fixtures = [
+  "pool.json",
+  "names.json",
+  ...readdirSync("tests/fixtures/crops").map((f) => `crops/${f}`),
+];
+const seed = states
+  .flatMap((state) =>
+    fixtures.map(
+      (f) =>
+        `npx wrangler r2 object put whom/${f} --file tests/fixtures/${f} --local --persist-to ${state}`,
+    ),
+  )
+  .join(" && ");
 const dev = (p: number, state: string) =>
   `npx wrangler dev --port ${p} --ip 127.0.0.1 ${vars} --persist-to ${state}`;
 const api = /api\.spec\.ts$/;
 
-// The API suite gets its own Worker so its rate-limit case never eats the budget the
-// browser suites play against.
+// Servers start before any setup hook, so the first one builds and seeds both local R2
+// stores. The API suite gets its own Worker so its rate-limit case never eats the budget
+// the browser suites play against.
 export default defineConfig({
   testDir: "./tests/e2e",
-  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -46,13 +61,13 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: dev(port, ".wrangler/state"),
+      command: `npm run build && ${seed} && ${dev(port, states[0] ?? "")}`,
       url: `http://127.0.0.1:${port}/`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
     },
     {
-      command: dev(apiPort, ".wrangler/state-api"),
+      command: dev(apiPort, states[1] ?? ""),
       url: `http://127.0.0.1:${apiPort}/`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
