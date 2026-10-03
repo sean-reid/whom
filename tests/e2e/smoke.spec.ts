@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { gotoLaunchDay } from "./helpers";
 
 test("the front page loads with the wordmark and today's number", async ({ page }, info) => {
@@ -18,8 +19,19 @@ test("health answers and unknown api routes answer 404 as json", async ({ reques
   expect(await res.json()).toEqual({ error: "not found" });
 });
 
-test("security headers are set", async ({ request }) => {
-  const res = await request.get("/");
-  expect(res.headers()["content-security-policy"] ?? "").toContain("default-src 'self'");
-  expect(res.headers()["x-content-type-options"]).toBe("nosniff");
+test("security headers are set and the CSP admits the inline stylesheet", async ({ page }) => {
+  const violations: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") violations.push(msg.text());
+  });
+  const res = await page.goto("/");
+  const headers = res?.headers() ?? {};
+  expect(headers["content-security-policy"] ?? "").toContain("default-src 'self'");
+  expect(headers["x-content-type-options"]).toBe("nosniff");
+  await expect(page.locator("link[rel=stylesheet]")).toHaveCount(0);
+  const css = (await page.locator("head style").textContent()) ?? "";
+  const hash = createHash("sha256").update(css).digest("base64");
+  expect(headers["content-security-policy"]).toContain(`style-src 'self' 'sha256-${hash}'`);
+  await expect(page.locator(".wordmark")).toHaveCSS("font-weight", "700");
+  expect(violations.filter((v) => v.includes("Content Security Policy"))).toEqual([]);
 });
