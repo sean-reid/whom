@@ -7,10 +7,11 @@ use std::time::{Duration, Instant};
 pub const USER_AGENT: &str =
     "whom-pipeline/0.1 (https://github.com/sean-reid/whom; seanreid.mail@gmail.com)";
 pub const WIKIMEDIA_GAP: Duration = Duration::from_millis(1500);
-pub const QLEVER_GAP: Duration = Duration::from_millis(1000);
+pub const QLEVER_GAP: Duration = Duration::from_millis(3000);
 pub const CLOUDFLARE_GAP: Duration = Duration::from_millis(300);
 const BACKOFF_START: Duration = Duration::from_secs(30);
-const MAX_429: u32 = 3;
+const BACKOFF_429_START: Duration = Duration::from_secs(60);
+const MAX_429: u32 = 5;
 const MAX_TRANSIENT_ATTEMPTS: u32 = 3;
 const MAX_REDIRECTS: u32 = 5;
 
@@ -169,20 +170,22 @@ impl Client {
                 })?;
                 continue;
             }
-            if status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::SERVICE_UNAVAILABLE
-            {
-                if status == StatusCode::TOO_MANY_REQUESTS {
-                    self.consecutive_429 += 1;
-                    if self.consecutive_429 >= MAX_429 {
-                        return Err(FetchError::Fatal(format!(
-                            "{MAX_429} consecutive 429 responses, last from {url}"
-                        )));
-                    }
-                } else {
-                    transient_attempts += 1;
-                    if transient_attempts >= MAX_TRANSIENT_ATTEMPTS {
-                        return Err(FetchError::Transient(format!("{status} from {url}")));
-                    }
+            if status == StatusCode::TOO_MANY_REQUESTS {
+                self.consecutive_429 += 1;
+                if self.consecutive_429 >= MAX_429 {
+                    return Err(FetchError::Fatal(format!(
+                        "{MAX_429} consecutive 429 responses, last from {url}"
+                    )));
+                }
+                let wait = retry_after(&resp).unwrap_or(backoff_429(self.consecutive_429));
+                eprintln!("  {status} from {url}; waiting {}s", wait.as_secs());
+                self.sleeper.sleep(wait);
+                continue;
+            }
+            if status == StatusCode::SERVICE_UNAVAILABLE {
+                transient_attempts += 1;
+                if transient_attempts >= MAX_TRANSIENT_ATTEMPTS {
+                    return Err(FetchError::Transient(format!("{status} from {url}")));
                 }
                 let wait = retry_after(&resp).unwrap_or(backoff);
                 backoff *= 2;
@@ -209,6 +212,11 @@ impl Client {
             )));
         }
     }
+}
+
+// 60 s, 120 s, 240 s, 480 s for the first four 429s in a row; the fifth is fatal.
+fn backoff_429(consecutive: u32) -> Duration {
+    BACKOFF_429_START * 2u32.pow(consecutive.saturating_sub(1).min(3))
 }
 
 fn redirect_target(from: &str, resp: &Response) -> Option<String> {
@@ -395,22 +403,62 @@ mod tests {
     }
 
     #[test]
-    fn three_429s_in_a_row_are_fatal() {
+    fn qlever_is_paced_three_seconds_apart_and_wikimedia_one_and_a_half() {
+        assert_eq!(QLEVER_GAP, Duration::from_secs(3));
+        assert_eq!(WIKIMEDIA_GAP, Duration::from_millis(1500));
+    }
+
+    #[test]
+    fn five_429s_in_a_row_are_fatal_after_a_doubling_minute_ladder() {
         let too_many = response("429 Too Many Requests", &[], "");
-        let (base, handle) = serve(vec![too_many.clone(), too_many.clone(), too_many]);
+        let (base, handle) = serve(vec![too_many; 5]);
         let recorder = Recorder::default();
         let mut client = Client::with_sleeper(Box::new(recorder.clone())).unwrap();
         let err = client.get(&format!("{base}/x"), None).unwrap_err();
         assert!(
-            matches!(&err, FetchError::Fatal(m) if m.contains("3 consecutive 429")),
+            matches!(&err, FetchError::Fatal(m) if m.contains("5 consecutive 429")),
             "{err}"
         );
-        assert_eq!(client.requests, 3);
+        assert_eq!(client.requests, 5);
         assert_eq!(
             recorder.slept(),
-            [Duration::from_secs(30), Duration::from_secs(60)]
+            [60, 120, 240, 480].map(Duration::from_secs)
         );
-        assert_eq!(handle.join().unwrap().len(), 3);
+        assert_eq!(handle.join().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn a_429_with_retry_after_waits_that_long_and_a_success_resets_the_count() {
+        let (base, handle) = serve(vec![
+            response("429 Too Many Requests", &[("Retry-After", "9")], ""),
+            response("200 OK", &[], "ok"),
+            response("429 Too Many Requests", &[], ""),
+            response("200 OK", &[], "ok"),
+        ]);
+        let recorder = Recorder::default();
+        let mut client = Client::with_sleeper(Box::new(recorder.clone())).unwrap();
+        assert_eq!(
+            client
+                .get(&format!("{base}/x"), None)
+                .unwrap()
+                .text()
+                .unwrap(),
+            "ok"
+        );
+        assert_eq!(
+            client
+                .get(&format!("{base}/y"), None)
+                .unwrap()
+                .text()
+                .unwrap(),
+            "ok"
+        );
+        assert_eq!(client.requests, 4);
+        assert_eq!(
+            recorder.slept(),
+            [Duration::from_secs(9), Duration::from_secs(60)]
+        );
+        assert_eq!(handle.join().unwrap().len(), 4);
     }
 
     #[test]
