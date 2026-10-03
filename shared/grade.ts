@@ -68,6 +68,41 @@ function popularityPhrase(guess: NameRecord, answer: NameRecord): Phrase {
   return { text: Math.abs(diff) === 1 ? side : `much ${side}`, exact: false };
 }
 
+const ERA_SPAN = 10;
+
+function eraPhrase(
+  guess: string,
+  guessRec: NameRecord,
+  answer: string,
+  answerRec: NameRecord,
+): Phrase {
+  const g = guessRec.era;
+  const a = answerRec.era;
+  if (typeof g !== "number" || typeof a !== "number") {
+    return guess === answer
+      ? { text: "same era", exact: true }
+      : { text: "era unknown", exact: false };
+  }
+  const diff = a - g;
+  if (Math.abs(diff) <= ERA_SPAN) return { text: "same era", exact: true };
+  return { text: diff < 0 ? "an older name" : "a newer name", exact: false };
+}
+
+function rootPhrase(
+  guess: string,
+  guessRec: NameRecord,
+  answer: string,
+  answerRec: NameRecord,
+): Phrase | undefined {
+  if (answerRec.sameAs?.includes(guess) || guessRec.sameAs?.includes(answer))
+    return { text: "a form of the same name", exact: true };
+  if (guessRec.shortOf?.includes(answer))
+    return { text: "your guess is a short form of the answer", exact: true };
+  if (answerRec.shortOf?.includes(guess))
+    return { text: "the answer is a short form of your guess", exact: true };
+  return undefined;
+}
+
 export function phrases(
   guess: string,
   guessRec: NameRecord,
@@ -75,13 +110,17 @@ export function phrases(
   answerRec: NameRecord,
   languages: Record<string, string>,
 ): Phrase[] {
-  return [
+  const out = [
     lengthPhrase(guess, answer),
     firstLetterPhrase(guess, answer),
     languagePhrase(guessRec, answerRec, languages),
     soundPhrase(guessRec, answerRec),
     popularityPhrase(guessRec, answerRec),
+    eraPhrase(guess, guessRec, answer, answerRec),
   ];
+  const root = rootPhrase(guess, guessRec, answer, answerRec);
+  if (root) out.push(root);
+  return out;
 }
 
 export function hint(
