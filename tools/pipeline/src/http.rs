@@ -2,7 +2,6 @@ use anyhow::Result;
 use reqwest::blocking::{Client as Inner, RequestBuilder, Response};
 use reqwest::redirect::Policy;
 use reqwest::{StatusCode, Url};
-use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 pub const USER_AGENT: &str =
@@ -34,6 +33,18 @@ impl std::fmt::Display for FetchError {
 
 impl std::error::Error for FetchError {}
 
+pub trait Sleeper {
+    fn sleep(&mut self, d: Duration);
+}
+
+pub struct ThreadSleeper;
+
+impl Sleeper for ThreadSleeper {
+    fn sleep(&mut self, d: Duration) {
+        std::thread::sleep(d);
+    }
+}
+
 struct Pacer {
     gap: Duration,
     last: Option<Instant>,
@@ -45,7 +56,7 @@ impl Pacer {
             let due = last + self.gap;
             let now = Instant::now();
             if due > now {
-                sleep(due - now);
+                std::thread::sleep(due - now);
             }
         }
         self.last = Some(Instant::now());
@@ -58,12 +69,19 @@ pub struct Client {
     qlever: Pacer,
     cloudflare: Pacer,
     other: Pacer,
+    sleeper: Box<dyn Sleeper>,
     consecutive_429: u32,
     pub requests: u64,
 }
 
 impl Client {
     pub fn new() -> Result<Self> {
+        Self::with_sleeper(Box::new(ThreadSleeper))
+    }
+
+    // The pacer gaps always use the thread clock; only the backoff waits go
+    // through the sleeper.
+    pub fn with_sleeper(sleeper: Box<dyn Sleeper>) -> Result<Self> {
         let inner = Inner::builder()
             .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(300))
@@ -76,6 +94,7 @@ impl Client {
             qlever: pacer(QLEVER_GAP),
             cloudflare: pacer(CLOUDFLARE_GAP),
             other: pacer(Duration::from_secs(1)),
+            sleeper,
             consecutive_429: 0,
             requests: 0,
         })
@@ -129,7 +148,7 @@ impl Client {
                         return Err(FetchError::Transient(e.to_string()));
                     }
                     eprintln!("  {url}: {e}; retrying in 5s");
-                    sleep(Duration::from_secs(5));
+                    self.sleeper.sleep(Duration::from_secs(5));
                     continue;
                 }
             };
@@ -168,7 +187,7 @@ impl Client {
                 let wait = retry_after(&resp).unwrap_or(backoff);
                 backoff *= 2;
                 eprintln!("  {status} from {url}; waiting {}s", wait.as_secs());
-                sleep(wait);
+                self.sleeper.sleep(wait);
                 continue;
             }
             if status == StatusCode::NOT_FOUND {
@@ -179,7 +198,7 @@ impl Client {
                 if transient_attempts >= MAX_TRANSIENT_ATTEMPTS {
                     return Err(FetchError::Transient(format!("{status} from {url}")));
                 }
-                sleep(backoff);
+                self.sleeper.sleep(backoff);
                 backoff *= 2;
                 continue;
             }
@@ -219,10 +238,71 @@ fn retry_after_value(v: &str, now: time::OffsetDateTime) -> Option<Duration> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub mod testing {
+    use super::Sleeper;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    // Serves one canned response per connection and hands back each request line.
+    pub fn serve(responses: Vec<String>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            for body in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = stream.read(&mut buf).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                }
+                let request = String::from_utf8_lossy(&request).to_string();
+                seen.push(request.lines().next().unwrap_or("").to_string());
+                stream.write_all(body.as_bytes()).unwrap();
+            }
+            seen
+        });
+        (format!("http://{addr}"), handle)
+    }
+
+    pub fn response(status: &str, headers: &[(&str, &str)], body: &str) -> String {
+        let mut out = format!("HTTP/1.1 {status}\r\n");
+        for (k, v) in headers {
+            out.push_str(&format!("{k}: {v}\r\n"));
+        }
+        out.push_str(&format!(
+            "Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        ));
+        out
+    }
+
+    #[derive(Clone, Default)]
+    pub struct Recorder(pub Arc<Mutex<Vec<Duration>>>);
+
+    impl Recorder {
+        pub fn slept(&self) -> Vec<Duration> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    impl Sleeper for Recorder {
+        fn sleep(&mut self, d: Duration) {
+            self.0.lock().unwrap().push(d);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::{response, serve, Recorder};
+    use super::*;
 
     #[test]
     fn retry_after_accepts_seconds_and_http_dates() {
@@ -243,41 +323,11 @@ mod tests {
         assert_eq!(retry_after_value("soon", now), None);
     }
 
-    fn serve(responses: Vec<String>) -> (String, std::thread::JoinHandle<Vec<String>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let handle = std::thread::spawn(move || {
-            let mut seen = Vec::new();
-            for body in responses {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut buf = [0u8; 4096];
-                let n = stream.read(&mut buf).unwrap();
-                let request = String::from_utf8_lossy(&buf[..n]).to_string();
-                seen.push(request.lines().next().unwrap_or("").to_string());
-                stream.write_all(body.as_bytes()).unwrap();
-            }
-            seen
-        });
-        (format!("http://{addr}"), handle)
-    }
-
     #[test]
     fn redirects_are_followed_through_the_paced_loop() {
         let (base, handle) = serve(vec![
-            "HTTP/1.1 302 Found
-Location: /thumb/x.jpg
-Content-Length: 0
-Connection: close
-
-"
-            .to_string(),
-            "HTTP/1.1 200 OK
-Content-Type: image/jpeg
-Content-Length: 3
-Connection: close
-
-abc"
-            .to_string(),
+            response("302 Found", &[("Location", "/thumb/x.jpg")], ""),
+            response("200 OK", &[("Content-Type", "image/jpeg")], "abc"),
         ]);
         let mut client = Client::new().unwrap();
         let started = Instant::now();
@@ -293,5 +343,55 @@ abc"
         let lines = handle.join().unwrap();
         assert_eq!(lines[0], "GET /wiki/Special:FilePath/x.jpg HTTP/1.1");
         assert_eq!(lines[1], "GET /thumb/x.jpg HTTP/1.1");
+    }
+
+    #[test]
+    fn three_429s_in_a_row_are_fatal() {
+        let too_many = response("429 Too Many Requests", &[], "");
+        let (base, handle) = serve(vec![too_many.clone(), too_many.clone(), too_many]);
+        let recorder = Recorder::default();
+        let mut client = Client::with_sleeper(Box::new(recorder.clone())).unwrap();
+        let err = client.get(&format!("{base}/x"), None).unwrap_err();
+        assert!(
+            matches!(&err, FetchError::Fatal(m) if m.contains("3 consecutive 429")),
+            "{err}"
+        );
+        assert_eq!(client.requests, 3);
+        assert_eq!(
+            recorder.slept(),
+            [Duration::from_secs(30), Duration::from_secs(60)]
+        );
+        assert_eq!(handle.join().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn a_503_waits_for_retry_after_then_succeeds() {
+        let (base, handle) = serve(vec![
+            response("503 Service Unavailable", &[("Retry-After", "7")], ""),
+            response("200 OK", &[], "ok"),
+        ]);
+        let recorder = Recorder::default();
+        let mut client = Client::with_sleeper(Box::new(recorder.clone())).unwrap();
+        let resp = client.get(&format!("{base}/x"), None).unwrap();
+        assert_eq!(resp.text().unwrap(), "ok");
+        assert_eq!(client.requests, 2);
+        assert_eq!(recorder.slept(), [Duration::from_secs(7)]);
+        assert_eq!(handle.join().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_500_backs_off_twice_then_gives_up_as_transient() {
+        let boom = response("500 Internal Server Error", &[], "");
+        let (base, handle) = serve(vec![boom.clone(), boom.clone(), boom]);
+        let recorder = Recorder::default();
+        let mut client = Client::with_sleeper(Box::new(recorder.clone())).unwrap();
+        let err = client.get(&format!("{base}/x"), None).unwrap_err();
+        assert!(matches!(err, FetchError::Transient(_)), "{err}");
+        assert_eq!(client.requests, 3);
+        assert_eq!(
+            recorder.slept(),
+            [Duration::from_secs(30), Duration::from_secs(60)]
+        );
+        assert_eq!(handle.join().unwrap().len(), 3);
     }
 }
