@@ -4,7 +4,7 @@ use crate::http::{Client, FetchError};
 use crate::names::{GivenName, Graph};
 use crate::qlever::{self, Candidate};
 use crate::store::{self, ImageInfo, Names, Person, Pool, State, TRANSIENT_SKIP};
-use crate::text::{first_token, normalize};
+use crate::text::{first_token, is_name_label, normalize};
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -82,7 +82,7 @@ pub fn run(args: &Args) -> Result<()> {
         if c.label.trim().is_empty() {
             state.mark_skipped(&c.qid, "no-label");
             report.skip("no-label");
-        } else if c.givens.is_empty() {
+        } else if !c.givens.iter().any(|(_, l)| is_name_label(l.trim())) {
             state.mark_skipped(&c.qid, "no-given-name");
             report.skip("no-given-name");
         } else {
@@ -176,7 +176,25 @@ pub fn run(args: &Args) -> Result<()> {
         pool.people.iter().filter(|p| p.retired).count()
     );
     println!("names in graph: {}", names.names.len());
+    println!(
+        "names with an era: {}, with sameAs: {}, with shortOf: {}",
+        names.names.values().filter(|n| n.era.is_some()).count(),
+        names
+            .names
+            .values()
+            .filter(|n| !n.same_as.is_empty())
+            .count(),
+        names
+            .names
+            .values()
+            .filter(|n| !n.short_of.is_empty())
+            .count()
+    );
     println!("given names without an English label: {}", graph.unlabelled);
+    println!(
+        "given-name labels failing the name rule: {}",
+        graph.rejected_labels
+    );
     println!("languages seen: {}", graph.langs_seen.len());
     println!(
         "languages without a family: {} [{}]",
@@ -264,8 +282,9 @@ pub fn display_name(c: &Candidate) -> String {
     let wanted = normalize(token);
     c.givens
         .iter()
-        .find(|(_, l)| !l.is_empty() && normalize(l) == wanted)
-        .or_else(|| c.givens.iter().find(|(_, l)| !l.is_empty()))
+        .filter(|(_, l)| is_name_label(l.trim()))
+        .find(|(_, l)| normalize(l) == wanted)
+        .or_else(|| c.givens.iter().find(|(_, l)| is_name_label(l.trim())))
         .map(|(_, l)| l.trim().to_string())
         .unwrap_or_else(|| token.to_string())
 }
@@ -278,9 +297,9 @@ pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
         .map(|(_, l)| l.as_str())
         .chain(c.nicknames.iter().map(String::as_str))
         .chain(first_token(&c.label));
-    for s in sources {
+    for s in sources.map(str::trim).filter(|s| is_name_label(s)) {
         let n = normalize(s);
-        if !n.is_empty() && !forms.iter().any(|(k, _)| *k == n) {
+        if !forms.iter().any(|(k, _)| *k == n) {
             forms.push((n, s.trim().to_string()));
         }
     }
@@ -338,11 +357,19 @@ fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Re
     let rare = qlever::given_names_by_id(client, &extra)?;
     for g in common.iter().chain(rare.iter()) {
         graph.add_given_name(&GivenName {
+            qid: g.qid.clone(),
             label: g.label.clone(),
             langs: g.langs.clone(),
             count: g.count,
+            same_as: g.same_as.clone(),
+            hypocorism: g.hypocorism,
         });
     }
+    let qids: Vec<String> = graph.key_of_qid.keys().cloned().collect();
+    for row in qlever::birth_years(client, &qids)? {
+        graph.add_birth_years(&row.qid, row.year, row.count);
+    }
+    graph.link();
     for c in candidates {
         for (_, display) in name_forms(c) {
             graph.ensure_form(&display);
@@ -424,5 +451,16 @@ mod tests {
             .map(|(k, _)| k)
             .collect();
         assert_eq!(forms, vec!["alan", "mathison", "prof"]);
+    }
+
+    #[test]
+    fn forms_and_display_skip_labels_that_are_not_names() {
+        let mut c = candidate();
+        c.givens.insert(0, ("Q1".into(), ".".into()));
+        c.nicknames = vec!["The Prof (1950s)".into()];
+        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(forms, vec!["alan", "mathison"]);
+        c.label = "Turing".into();
+        assert_eq!(display_name(&c), "Mathison");
     }
 }

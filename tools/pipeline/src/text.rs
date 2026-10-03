@@ -31,6 +31,38 @@ pub fn ascii_letters(s: &str) -> String {
     out
 }
 
+const APOSTROPHES: [char; 3] = ['\'', '\u{2019}', '\u{2018}'];
+
+fn is_separator(c: char) -> bool {
+    c == ' ' || c == '-' || APOSTROPHES.contains(&c)
+}
+
+// A given-name label that can stand as a name: 2 to 40 chars of letters,
+// combining marks, spaces, hyphens, and apostrophes, starting with a letter
+// or an apostrophe, with no two separators in a row.
+pub fn is_name_label(s: &str) -> bool {
+    let n = s.chars().count();
+    if !(2..=40).contains(&n) {
+        return false;
+    }
+    let mut prev_sep = false;
+    for (i, c) in s.chars().enumerate() {
+        let ok = c.is_alphabetic() || is_combining_mark(c) || is_separator(c);
+        if !ok {
+            return false;
+        }
+        if i == 0 && !(c.is_alphabetic() || APOSTROPHES.contains(&c)) {
+            return false;
+        }
+        let sep = is_separator(c);
+        if sep && prev_sep {
+            return false;
+        }
+        prev_sep = sep;
+    }
+    true
+}
+
 pub fn first_token(s: &str) -> Option<&str> {
     s.split_whitespace().next()
 }
@@ -127,6 +159,35 @@ mod tests {
         assert_eq!(ascii_letters("Jean-Paul"), "jean-paul");
         assert_eq!(ascii_letters("Иван"), "");
         assert_eq!(ascii_letters("Ali2"), "ali");
+    }
+
+    #[test]
+    fn name_label_rule_accepts_names_and_rejects_the_rest() {
+        for s in [
+            "Jean-Paul",
+            "Mary Ann",
+            "O'Neil",
+            "Antonín",
+            "'Abd al-Hamid",
+            "Zoë",
+            "Al",
+        ] {
+            assert!(is_name_label(s), "{s}");
+        }
+        for s in [
+            ".",
+            "\"Nastya\", \"Nastas\", or \"Nastenka",
+            "",
+            "A",
+            "Jean--Paul",
+            "Mary  Ann",
+            "-Anne",
+            "Ali2",
+            "Bob (name)",
+            "Abcdefghijklmnopqrstuvwxyzabcdefghijklmnopq",
+        ] {
+            assert!(!is_name_label(s), "{s}");
+        }
     }
 
     #[test]
