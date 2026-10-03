@@ -8,7 +8,7 @@ import type {
 } from "../shared/api.ts";
 import type { Person } from "../shared/data.ts";
 import { EPOCH, dateWithinWindow, latestAllowedNumber, puzzleNumber } from "../shared/day.ts";
-import { answerRecord, facts, hint, isWin, phrases } from "../shared/grade.ts";
+import { answerRecord, facts, fallbackRecord, hint, isWin, phrases } from "../shared/grade.ts";
 import { normalizeName } from "../shared/names.ts";
 import { loadData, type Loaded } from "./data.ts";
 import type { Env } from "./env.ts";
@@ -44,6 +44,7 @@ const puzzleStub = (env: Env, n: number) => env.PUZZLES.get(env.PUZZLES.idFromNa
 
 // A pin never changes once made, so each isolate asks the Durable Object once per puzzle.
 const pins = new Map<number, string>();
+const unrecorded = new Set<string>();
 
 async function answerFor(env: Env, data: Loaded, n: number): Promise<Person> {
   let qid = pins.get(n);
@@ -125,8 +126,14 @@ async function postGuess(request: Request, env: Env, ctx: ExecutionContext): Pro
   const guessRec = data.names.names[guess];
   if (!guessRec) return error("unknown name", 422);
   if (game.guesses.includes(guess)) return error("already guessed", 422);
-  const answerRec = answerRecord(answer, data.names);
-  if (!answerRec) return error("answer has no name record", 500);
+  let answerRec = answerRecord(answer, data.names);
+  if (!answerRec) {
+    if (!unrecorded.has(answer.qid)) {
+      unrecorded.add(answer.qid);
+      console.warn(`${answer.qid} has no record in names.json; grading against an empty one`);
+    }
+    answerRec = fallbackRecord(answer);
+  }
 
   const guesses = [...game.guesses, guess];
   const won = isWin(guess, answer);

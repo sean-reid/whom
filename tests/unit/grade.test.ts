@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { NameRecord, NamesFile, Person } from "../../shared/data";
-import { answerRecord, facts, hint, isWin, phrases, placeName } from "../../shared/grade";
+import {
+  answerRecord,
+  facts,
+  fallbackRecord,
+  hint,
+  isWin,
+  phrases,
+  placeName,
+} from "../../shared/grade";
 import { normalizeName } from "../../shared/names";
 
 const languages = { Q1860: "English", Q150: "French", Q1321: "Spanish", Q188: "German" };
@@ -304,6 +312,35 @@ describe("hint, win, and answer record", () => {
   it("wins on any accepted form", () => {
     expect(isWin("alan", turing)).toBe(true);
     expect(isWin("allan", turing)).toBe(false);
+  });
+  it("grades a person with no record against an empty one", () => {
+    const empty = fallbackRecord(turing);
+    expect(empty).toEqual({
+      display: "Alan",
+      langs: [],
+      families: [],
+      count: 0,
+      dm: "",
+      rhyme: "",
+      era: null,
+    });
+    expect(texts(phrases("william", william, "alan", empty, languages))).toEqual([
+      "three shorter",
+      "starts earlier",
+      "language unknown",
+      "sound unknown",
+      "much rarer",
+      "era unknown",
+    ]);
+    expect(phrases("alan", empty, "alan", empty, languages).map((x) => x.exact)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+    ]);
+    expect(hint(empty, 8, languages)).toBeUndefined();
   });
   it("finds the record by display and falls back to accepted forms", () => {
     const names: NamesFile = { version: 1, languages, names: { allan: alec } };

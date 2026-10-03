@@ -14,6 +14,19 @@ export function answerRecord(answer: Person, names: NamesFile): NameRecord | und
   return undefined;
 }
 
+// Grades a person the name graph has not caught up with yet.
+export function fallbackRecord(answer: Person): NameRecord {
+  return {
+    display: answer.display,
+    langs: [],
+    families: [],
+    count: 0,
+    dm: "",
+    rhyme: "",
+    era: null,
+  };
+}
+
 export function isWin(guess: string, answer: Person): boolean {
   return answer.names.includes(guess);
 }
