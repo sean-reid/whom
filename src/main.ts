@@ -8,6 +8,7 @@ import {
 } from "../shared/day.ts";
 import { ApiError, getNames, getPuzzle, getStats, postGuess } from "./api.ts";
 import {
+  announceRow,
   formatCountdown,
   formatDate,
   formatIssue,
@@ -36,6 +37,7 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const issue = $("issue");
 const portrait = $<HTMLImageElement>("portrait");
 const notice = $("notice");
+const announce = $("announce");
 const facts = $("facts");
 const lists = {
   sorted: $("guesses"),
@@ -174,6 +176,8 @@ async function guess() {
     saveGame(game);
     input.value = "";
     render();
+    if (game.done) end.focus();
+    else announce.textContent = announceRow(row, MAX_GUESSES - game.rows.length);
   } catch (err) {
     if (err instanceof ApiError && err.status === 422) {
       say(err.message === "already guessed" ? "You already tried that one." : "Not a name I know.");

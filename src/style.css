@@ -324,6 +324,10 @@ main,
   border-top: 1px solid var(--rule);
 }
 
+.end:focus {
+  outline: none;
+}
+
 .result {
   margin: 0;
   font-size: 1.35rem;
@@ -373,7 +377,7 @@ main,
 
 .dist {
   display: grid;
-  grid-template-columns: 2ch 1fr 4ch;
+  grid-template-columns: 2ch 1fr max-content;
   gap: 0.35rem 0.75rem;
   align-items: center;
   margin-top: 1.25rem;
@@ -404,13 +408,18 @@ main,
   border: 1px solid var(--ink-soft);
 }
 
-.dist .count {
-  text-align: right;
-  color: var(--ink-soft);
+.dist .label.mine {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
-.dist .mine .count {
-  color: var(--ink);
+.dist .count {
+  text-align: right;
+}
+
+.dist .count .all {
+  margin-left: 0.6rem;
+  color: var(--ink-soft);
 }
 
 .dist-note {

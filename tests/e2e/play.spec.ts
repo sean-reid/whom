@@ -35,6 +35,12 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
     await page.keyboard.press("Enter");
     rows += 1;
     await expect(page.locator("#guesses li, #latest li")).toHaveCount(rows);
+    if (rows === 1) {
+      const phrase = await page.locator("#latest li .line > *").first().textContent();
+      await expect(page.locator("#announce")).toHaveText(
+        new RegExp(`^${phrase}, .*\\. 7 guesses left$`),
+      );
+    }
     if (rows === 2) {
       await expect(page.locator("#facts li").first()).toHaveText(/^Born in the \d{4}s$/);
       await expect(page.locator("#latest li .name")).toHaveText(display, {
@@ -48,12 +54,17 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
     if (await page.locator("#end").isVisible()) break;
   }
   await expect(page.locator("#end")).toBeVisible();
+  await expect(page.locator("#end")).toBeFocused();
   await expect(page.locator("#guess-form")).toBeHidden();
   const winner = pool.people[rows - misses.length - 1];
   await expect(page.locator("#result")).toContainText(winner?.label ?? "");
   await expect(page.locator("#credit")).toContainText("via Wikimedia Commons");
   await expect(page.locator("#figures dd").first()).toHaveText("1");
   await expect(page.locator("#dist-note")).toContainText("everyone today");
+  await expect(page.locator("#dist .count .all")).toHaveCount(9);
+  await expect(page.locator("#dist .visually-hidden").nth(rows - 1)).toHaveText(
+    new RegExp(`^Won in ${rows}: 1 of your games, [1-9]\\d* of everyone's$`),
+  );
   await page.screenshot({ path: info.outputPath("result.png"), fullPage: true });
 
   await page.click("#share");

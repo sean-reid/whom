@@ -62,8 +62,9 @@
         <button type="submit" id="submit">Guess</button>
       </form>
       <p class="notice" id="notice" role="status" aria-live="polite"></p>
+      <p class="visually-hidden" id="announce" role="status" aria-live="polite"></p>
       <p class="remaining" id="remaining"></p>
-      <section class="end" id="end" aria-label="Result" hidden>
+      <section class="end" id="end" aria-label="Result" tabindex="-1" hidden>
         <p class="result" id="result"></p>
         <p class="desc" id="desc"></p>
         <p class="credit" id="credit"></p>
