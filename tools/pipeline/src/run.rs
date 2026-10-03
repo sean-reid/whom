@@ -311,20 +311,31 @@ pub fn is_nickname_form(s: &str) -> bool {
     is_name_label(s) && s.split_whitespace().count() <= MAX_NICKNAME_WORDS
 }
 
+// The label's first token stands in for a given name only for mononyms; for
+// everyone else it is a title or a stage name, not an answer.
 pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
     let mut forms: Vec<(String, String)> = Vec::new();
-    let sources = c
+    let givens: Vec<&str> = c
         .givens
         .iter()
         .map(|(_, l)| l.trim())
         .filter(|l| is_name_label(l))
+        .collect();
+    let label_token = if givens.is_empty() {
+        first_token(&c.label).filter(|t| is_name_label(t))
+    } else {
+        None
+    };
+    let sources = givens
+        .iter()
+        .copied()
         .chain(
             c.nicknames
                 .iter()
                 .map(|n| n.trim())
                 .filter(|n| is_nickname_form(n)),
         )
-        .chain(first_token(&c.label).filter(|t| is_name_label(t)));
+        .chain(label_token);
     for s in sources {
         let n = normalize(s);
         if !forms.iter().any(|(k, _)| *k == n) {
@@ -503,6 +514,25 @@ mod tests {
         assert_eq!(forms, vec!["alan", "mathison"]);
         c.label = "Turing".into();
         assert_eq!(display_name(&c), "Mathison");
+    }
+
+    #[test]
+    fn label_token_counts_only_for_mononyms() {
+        let mut c = candidate();
+        c.label = "Lady Gaga".into();
+        c.givens = vec![("Q18069632".into(), "Stefani".into())];
+        c.nicknames.clear();
+        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(forms, vec!["stefani"]);
+        assert_eq!(display_name(&c), "Stefani");
+        c.label = "Pelé".into();
+        c.givens.clear();
+        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(forms, vec!["pele"]);
+        assert_eq!(display_name(&c), "Pelé");
+        c.givens = vec![("Q1".into(), ".".into())];
+        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(forms, vec!["pele"]);
     }
 
     #[test]
