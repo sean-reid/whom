@@ -161,7 +161,8 @@ async function guess() {
     } else if (err instanceof ApiError && err.status === 409) {
       say("This game is over. Reload for today's result.");
     } else {
-      say("Something went wrong. Try again.");
+      const why = err instanceof ApiError ? `the server answered ${err.status}` : "no connection";
+      say(`That guess did not get checked, ${why}. Try again.`);
     }
   } finally {
     submit.disabled = false;
