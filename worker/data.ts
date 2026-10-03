@@ -38,14 +38,28 @@ async function load(env: Env): Promise<Loaded> {
   };
 }
 
-export function loadData(env: Env): Promise<Loaded> {
+// After the TTL the current data keeps serving while one refresh runs; a failed refresh
+// leaves the old data in place.
+export function loadData(env: Env, ctx?: ExecutionContext): Promise<Loaded> {
   const now = Date.now();
-  if (!cached || now - cached.at > TTL_MS) {
+  if (!cached) {
     const promise = load(env);
     cached = { promise, at: now };
     promise.catch(() => {
       cached = null;
     });
+    return promise;
+  }
+  if (now - cached.at > TTL_MS) {
+    const current = cached.promise;
+    cached = { promise: current, at: now };
+    const refresh = load(env).then(
+      (loaded) => {
+        cached = { promise: Promise.resolve(loaded), at: Date.now() };
+      },
+      () => undefined,
+    );
+    ctx?.waitUntil(refresh);
   }
   return cached.promise;
 }

@@ -18,20 +18,40 @@ import { personForNumber } from "./schedule.ts";
 export { Puzzle } from "./puzzle.ts";
 
 const DAY = "public, max-age=86400";
+const THREE_DAYS_MS = 3 * 86_400_000;
+const MAX_BODY_BYTES = 4096;
+const MAX_NAME_LENGTH = 64;
+
+// API responses never render as documents, so they carry the strictest policy.
+const apiHeaders = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+};
 
 const json = (body: unknown, status = 200, cache = "no-store"): Response =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": cache },
+    headers: {
+      ...apiHeaders,
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": cache,
+    },
   });
 
 const error = (message: string, status: number): Response => json({ error: message }, status);
 
 const puzzleStub = (env: Env, n: number) => env.PUZZLES.get(env.PUZZLES.idFromName(String(n)));
 
+// A pin never changes once made, so each isolate asks the Durable Object once per puzzle.
+const pins = new Map<number, string>();
+
 async function answerFor(env: Env, data: Loaded, n: number): Promise<Person> {
-  const candidate = personForNumber(data.order, n);
-  const qid = await puzzleStub(env, n).pin(candidate.qid);
+  let qid = pins.get(n);
+  if (qid === undefined) {
+    const candidate = personForNumber(data.order, n);
+    qid = await puzzleStub(env, n).pin(candidate.qid);
+    pins.set(n, qid);
+  }
   const pinned = data.byQid.get(qid);
   if (!pinned) throw new Error(`pinned ${qid} is missing from the pool`);
   return pinned;
@@ -49,12 +69,30 @@ function parseNumber(segment: string, nowMs: number): number | null {
   return n >= 1 && n <= latestAllowedNumber(nowMs) ? n : null;
 }
 
-async function getPuzzle(request: Request, env: Env, url: URL): Promise<Response> {
+async function cached(
+  request: Request,
+  ctx: ExecutionContext,
+  build: () => Promise<Response>,
+): Promise<Response> {
+  const cache = caches.default;
+  const hit = await cache.match(request);
+  if (hit) return hit;
+  const res = await build();
+  if (res.ok) ctx.waitUntil(cache.put(request, res.clone()));
+  return res;
+}
+
+async function getPuzzle(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  url: URL,
+): Promise<Response> {
   if (await throttled(request, env)) return error("slow down", 429);
   const date = url.searchParams.get("date") ?? "";
   const n = puzzleNumber(date);
   if (n === null || n < 1 || !dateWithinWindow(date, Date.now())) return error("bad date", 400);
-  await answerFor(env, await loadData(env), n);
+  await answerFor(env, await loadData(env, ctx), n);
   const token = await signToken(
     { n, nonce: newNonce(), guesses: [], done: false, issued: Date.now() },
     env.SESSION_SECRET,
@@ -63,8 +101,11 @@ async function getPuzzle(request: Request, env: Env, url: URL): Promise<Response
   return json(body);
 }
 
-async function postGuess(request: Request, env: Env): Promise<Response> {
+async function postGuess(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   if (await throttled(request, env)) return error("slow down", 429);
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+    return error("body too large", 413);
+  }
   let body: unknown;
   try {
     body = await request.json();
@@ -73,11 +114,12 @@ async function postGuess(request: Request, env: Env): Promise<Response> {
   }
   const { token, name } = (body ?? {}) as Record<string, unknown>;
   if (typeof token !== "string" || typeof name !== "string") return error("bad request", 400);
+  if (name.length > MAX_NAME_LENGTH) return error("unknown name", 422);
   const game = await verifyToken(token, env.SESSION_SECRET);
-  if (!game) return error("bad token", 400);
+  if (!game || Date.now() - game.issued > THREE_DAYS_MS) return error("bad token", 400);
   if (game.done) return error("game over", 409);
 
-  const data = await loadData(env);
+  const data = await loadData(env, ctx);
   const answer = await answerFor(env, data, game.n);
   const guess = normalizeName(name);
   const guessRec = data.names.names[guess];
@@ -120,14 +162,19 @@ async function postGuess(request: Request, env: Env): Promise<Response> {
   return json(res);
 }
 
-async function getCrop(env: Env, segment: string): Promise<Response> {
+async function getCrop(env: Env, ctx: ExecutionContext, segment: string): Promise<Response> {
   const n = parseNumber(segment, Date.now());
   if (n === null) return error("not found", 404);
-  const answer = await answerFor(env, await loadData(env), n);
+  const answer = await answerFor(env, await loadData(env, ctx), n);
   const obj = await env.FILES.get(answer.crop);
   if (!obj) return error("not found", 404);
   return new Response(obj.body, {
-    headers: { "content-type": "image/jpeg", "cache-control": DAY, etag: obj.httpEtag },
+    headers: {
+      ...apiHeaders,
+      "content-type": "image/jpeg",
+      "cache-control": DAY,
+      etag: obj.httpEtag,
+    },
   });
 }
 
@@ -139,34 +186,43 @@ async function getStats(env: Env, segment: string): Promise<Response> {
   return json(body);
 }
 
-async function getNames(env: Env): Promise<Response> {
-  const body: NamesResponse = { names: (await loadData(env)).displays };
+async function getNames(env: Env, ctx: ExecutionContext): Promise<Response> {
+  const body: NamesResponse = { names: (await loadData(env, ctx)).displays };
   return json(body, 200, DAY);
 }
 
-async function route(request: Request, env: Env, url: URL): Promise<Response> {
+async function route(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  url: URL,
+): Promise<Response> {
   const { pathname } = url;
   const method = request.method;
   if (pathname === "/api/health") {
     const body: HealthResponse = { ok: true, epoch: EPOCH };
     return json(body);
   }
-  if (pathname === "/api/puzzle" && method === "GET") return getPuzzle(request, env, url);
-  if (pathname === "/api/guess" && method === "POST") return postGuess(request, env);
-  if (pathname === "/api/names" && method === "GET") return getNames(env);
+  if (pathname === "/api/puzzle" && method === "GET") return getPuzzle(request, env, ctx, url);
+  if (pathname === "/api/guess" && method === "POST") return postGuess(request, env, ctx);
+  if (pathname === "/api/names" && method === "GET") {
+    return cached(request, ctx, () => getNames(env, ctx));
+  }
   const crop = /^\/api\/crop\/([^/]+)$/.exec(pathname);
-  if (crop && method === "GET") return getCrop(env, crop[1] ?? "");
+  if (crop && method === "GET") {
+    return cached(request, ctx, () => getCrop(env, ctx, crop[1] ?? ""));
+  }
   const stats = /^\/api\/stats\/([^/]+)$/.exec(pathname);
   if (stats && method === "GET") return getStats(env, stats[1] ?? "");
   return error("not found", 404);
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     try {
-      return await route(request, env, url);
+      return await route(request, env, ctx, url);
     } catch (err) {
       console.error(err);
       return error("internal error", 500);
