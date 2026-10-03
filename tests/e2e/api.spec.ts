@@ -1,9 +1,11 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { MAX_GUESSES } from "../../shared/api";
 import type { GuessResponse, PuzzleResponse, StatsResponse } from "../../shared/api";
-import type { PoolFile } from "../../shared/data";
+import type { NamesFile, PoolFile } from "../../shared/data";
 import { latestAllowedNumber, puzzleNumber } from "../../shared/day";
+import { normalizeName } from "../../shared/names";
 import { personForNumber, scheduleOrder } from "../../worker/schedule";
+import names from "../fixtures/names.json" with { type: "json" };
 import pool from "../fixtures/pool.json" with { type: "json" };
 
 // The seed matches the --var in playwright.config.ts, so the suite can work out today's answer.
@@ -20,6 +22,21 @@ function playableDate(): string {
 const date = playableDate();
 const n = puzzleNumber(date) ?? 0;
 const misses = ["pierre", "maria", "john", "carlos", "anna", "nicolas", "giovanni", "helen"];
+const ERA = /^(same era|an older name|a newer name|era unknown)$/;
+const ROOT =
+  /^(a form of the same name|your guess is a short form of the answer|the answer is a short form of your guess)$/;
+
+// A fixture name the grader links to the answer through sameAs or shortOf, if the day has one.
+function rootPartner(answer: string): string | undefined {
+  const records = (names as NamesFile).names;
+  const linked = (from: string, to: string) => {
+    const rec = records[from];
+    return rec?.sameAs?.includes(to) || rec?.shortOf?.includes(to);
+  };
+  return Object.keys(records).find(
+    (key) => key !== answer && (linked(key, answer) || linked(answer, key)),
+  );
+}
 
 async function newGame(request: APIRequestContext): Promise<PuzzleResponse> {
   const res = await request.get(`/api/puzzle?date=${date}`);
@@ -72,7 +89,8 @@ test("a lost game grades every miss, drips facts, and counts once", async ({ req
     penultimate = token;
     const { status, body } = await guess(request, token, name);
     expect(status, `guess ${i + 1}`).toBe(200);
-    expect(body.phrases).toHaveLength(5);
+    expect(body.phrases).toHaveLength(6);
+    expect(body.phrases[5]?.text).toMatch(ERA);
     expect(body.name).toBe(name[0]?.toUpperCase() + name.slice(1));
     expect(body.guessesLeft).toBe(MAX_GUESSES - i - 1);
     const kinds = body.facts.map((f) => f.kind);
@@ -110,7 +128,20 @@ test("a repeated guess is 422 and the right name wins with a reveal", async ({ r
   const again = await guess(request, first.body.token, "pierre");
   expect(again.status).toBe(422);
   expect(again.body.error).toBe("already guessed");
-  const win = await guess(request, first.body.token, answer.display.toUpperCase());
+  let token2 = first.body.token;
+  let made = 1;
+  const partner = rootPartner(normalizeName(answer.display));
+  if (partner) {
+    const related = await guess(request, token2, partner);
+    expect(related.status).toBe(200);
+    expect(related.body.won).toBe(false);
+    expect(related.body.phrases).toHaveLength(7);
+    expect(related.body.phrases[6]).toEqual({ text: expect.stringMatching(ROOT), exact: true });
+    token2 = related.body.token;
+    made += 1;
+  }
+  const win = await guess(request, token2, answer.display.toUpperCase());
+  made += 1;
   expect(win.status).toBe(200);
   expect(win.body.won).toBe(true);
   expect(win.body.done).toBe(true);
@@ -123,7 +154,7 @@ test("a repeated guess is 422 and the right name wins with a reveal", async ({ r
     image: answer.image,
   });
   const after = await stats(request);
-  expect(after.counts[1]).toBeGreaterThanOrEqual(1);
+  expect(after.counts[made - 1]).toBeGreaterThanOrEqual(1);
 });
 
 test("the crop is a jpeg for live numbers and 404 otherwise", async ({ request }) => {

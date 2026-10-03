@@ -21,7 +21,9 @@
       "families": ["germanic", "romance"],
       "count": 31000,
       "dm": "ALN",
-      "rhyme": "LN"
+      "rhyme": "LN",
+      "era": 1952,
+      "sameAs": ["allan", "allen"]
     },
     "alec": {
       "display": "Alec",
@@ -29,7 +31,8 @@
       "families": ["germanic"],
       "count": 2100,
       "dm": "ALK",
-      "rhyme": "LK"
+      "rhyme": "LK",
+      "era": 1948
     },
     "william": {
       "display": "William",
@@ -37,7 +40,18 @@
       "families": ["germanic"],
       "count": 210000,
       "dm": "ALM",
-      "rhyme": "LM"
+      "rhyme": "LM",
+      "era": 1925
+    },
+    "bill": {
+      "display": "Bill",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 9000,
+      "dm": "PL",
+      "rhyme": "PL",
+      "era": 1935,
+      "shortOf": ["william"]
     },
     "edward": {
       "display": "Edward",
@@ -45,7 +59,8 @@
       "families": ["germanic", "slavic"],
       "count": 66000,
       "dm": "ATRT",
-      "rhyme": "RT"
+      "rhyme": "RT",
+      "era": 1920
     },
     "grace": {
       "display": "Grace",
@@ -53,7 +68,18 @@
       "families": ["germanic"],
       "count": 9000,
       "dm": "KRS",
-      "rhyme": "RS"
+      "rhyme": "RS",
+      "era": 1945
+    },
+    "gracie": {
+      "display": "Gracie",
+      "langs": ["Q1860"],
+      "families": ["germanic"],
+      "count": 700,
+      "dm": "KRS",
+      "rhyme": "RS",
+      "era": 1980,
+      "shortOf": ["grace"]
     },
     "nelson": {
       "display": "Nelson",
@@ -61,7 +87,8 @@
       "families": ["germanic", "romance"],
       "count": 5200,
       "dm": "NLSN",
-      "rhyme": "SN"
+      "rhyme": "SN",
+      "era": 1950
     },
     "audrey": {
       "display": "Audrey",
@@ -69,7 +96,8 @@
       "families": ["germanic", "romance"],
       "count": 4300,
       "dm": "ATR",
-      "rhyme": "TR"
+      "rhyme": "TR",
+      "era": 1940
     },
     "frida": {
       "display": "Frida",
@@ -77,7 +105,19 @@
       "families": ["germanic"],
       "count": 2600,
       "dm": "FRT",
-      "rhyme": "RT"
+      "rhyme": "RT",
+      "era": 1955,
+      "sameAs": ["frieda"]
+    },
+    "frieda": {
+      "display": "Frieda",
+      "langs": ["Q188"],
+      "families": ["germanic"],
+      "count": 1800,
+      "dm": "FRT",
+      "rhyme": "RT",
+      "era": 1920,
+      "sameAs": ["frida"]
     },
     "ellen": {
       "display": "Ellen",
@@ -85,7 +125,8 @@
       "families": ["germanic"],
       "count": 17000,
       "dm": "ALN",
-      "rhyme": "LN"
+      "rhyme": "LN",
+      "era": 1950
     },
     "helen": {
       "display": "Helen",
@@ -93,7 +134,8 @@
       "families": ["germanic"],
       "count": 24000,
       "dm": "HLN",
-      "rhyme": "LN"
+      "rhyme": "LN",
+      "era": 1935
     },
     "alain": {
       "display": "Alain",
@@ -101,7 +143,8 @@
       "families": ["romance"],
       "count": 22000,
       "dm": "ALN",
-      "rhyme": "LN"
+      "rhyme": "LN",
+      "era": 1948
     },
     "allan": {
       "display": "Allan",
@@ -109,7 +152,9 @@
       "families": ["germanic"],
       "count": 8000,
       "dm": "ALN",
-      "rhyme": "LN"
+      "rhyme": "LN",
+      "era": 1950,
+      "sameAs": ["alan", "allen"]
     },
     "allen": {
       "display": "Allen",
@@ -117,7 +162,9 @@
       "families": ["germanic"],
       "count": 6000,
       "dm": "ALN",
-      "rhyme": "LN"
+      "rhyme": "LN",
+      "era": 1945,
+      "sameAs": ["alan", "allan"]
     },
     "ian": {
       "display": "Ian",
@@ -125,7 +172,8 @@
       "families": ["germanic", "celtic"],
       "count": 15000,
       "dm": "AN",
-      "rhyme": "AN"
+      "rhyme": "AN",
+      "era": 1960
     },
     "maria": {
       "display": "Maria",
@@ -133,7 +181,8 @@
       "families": ["romance", "germanic"],
       "count": 420000,
       "dm": "MR",
-      "rhyme": "MR"
+      "rhyme": "MR",
+      "era": 1950
     },
     "marie": {
       "display": "Marie",
@@ -141,7 +190,8 @@
       "families": ["romance", "slavic"],
       "count": 160000,
       "dm": "MR",
-      "rhyme": "MR"
+      "rhyme": "MR",
+      "era": 1930
     },
     "mary": {
       "display": "Mary",
@@ -149,7 +199,8 @@
       "families": ["germanic"],
       "count": 120000,
       "dm": "MR",
-      "rhyme": "MR"
+      "rhyme": "MR",
+      "era": 1925
     },
     "jose": {
       "display": "José",
@@ -157,7 +208,8 @@
       "families": ["romance"],
       "count": 330000,
       "dm": "HS",
-      "rhyme": "HS"
+      "rhyme": "HS",
+      "era": 1955
     },
     "antonin": {
       "display": "Antonín",
@@ -165,7 +217,8 @@
       "families": ["slavic", "romance"],
       "count": 7000,
       "dm": "ANTN",
-      "rhyme": "TN"
+      "rhyme": "TN",
+      "era": 1935
     },
     "john": {
       "display": "John",
@@ -173,7 +226,8 @@
       "families": ["germanic"],
       "count": 480000,
       "dm": "JN",
-      "rhyme": "JN"
+      "rhyme": "JN",
+      "era": 1935
     },
     "jean": {
       "display": "Jean",
@@ -181,7 +235,8 @@
       "families": ["romance"],
       "count": 250000,
       "dm": "JN",
-      "rhyme": "JN"
+      "rhyme": "JN",
+      "era": 1940
     },
     "juan": {
       "display": "Juan",
@@ -189,7 +244,8 @@
       "families": ["romance"],
       "count": 200000,
       "dm": "JN",
-      "rhyme": "JN"
+      "rhyme": "JN",
+      "era": 1960
     },
     "pierre": {
       "display": "Pierre",
@@ -197,7 +253,8 @@
       "families": ["romance"],
       "count": 110000,
       "dm": "PR",
-      "rhyme": "PR"
+      "rhyme": "PR",
+      "era": 1945
     },
     "carlos": {
       "display": "Carlos",
@@ -205,7 +262,8 @@
       "families": ["romance"],
       "count": 180000,
       "dm": "KRLS",
-      "rhyme": "LS"
+      "rhyme": "LS",
+      "era": 1962
     },
     "anna": {
       "display": "Anna",
@@ -213,7 +271,8 @@
       "families": ["germanic", "romance", "slavic"],
       "count": 210000,
       "dm": "AN",
-      "rhyme": "AN"
+      "rhyme": "AN",
+      "era": 1955
     },
     "ann": {
       "display": "Ann",
@@ -221,7 +280,8 @@
       "families": ["germanic"],
       "count": 19000,
       "dm": "AN",
-      "rhyme": "AN"
+      "rhyme": "AN",
+      "era": 1940
     },
     "nicolas": {
       "display": "Nicolas",
@@ -229,7 +289,8 @@
       "families": ["romance"],
       "count": 60000,
       "dm": "NKLS",
-      "rhyme": "LS"
+      "rhyme": "LS",
+      "era": 1965
     },
     "sean": {
       "display": "Seán",
@@ -237,7 +298,8 @@
       "families": ["germanic", "celtic"],
       "count": 14000,
       "dm": "SN",
-      "rhyme": "SN"
+      "rhyme": "SN",
+      "era": 1972
     },
     "giovanni": {
       "display": "Giovanni",
@@ -245,7 +307,8 @@
       "families": ["romance"],
       "count": 95000,
       "dm": "JFN",
-      "rhyme": "FN"
+      "rhyme": "FN",
+      "era": 1930
     },
     "laszlo": {
       "display": "László",
@@ -253,7 +316,8 @@
       "families": [],
       "count": 21000,
       "dm": "LSL",
-      "rhyme": "SL"
+      "rhyme": "SL",
+      "era": 1945
     },
     "ada": {
       "display": "Ada",
@@ -261,7 +325,8 @@
       "families": ["germanic", "romance"],
       "count": 3800,
       "dm": "AT",
-      "rhyme": "AT"
+      "rhyme": "AT",
+      "era": 1935
     },
     "jean-paul": {
       "display": "Jean-Paul",
@@ -269,7 +334,8 @@
       "families": ["romance"],
       "count": 9500,
       "dm": "JNPL",
-      "rhyme": "PL"
+      "rhyme": "PL",
+      "era": 1948
     }
   }
 }
