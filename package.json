@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "description": "A daily game: one famous face, eight guesses at the first name.",
   "scripts": {
     "dev": "npm run build && node scripts/seed-local.mjs .wrangler/state && wrangler dev --persist-to .wrangler/state --var SESSION_SECRET:dev --var PUZZLE_SEED:dev",
