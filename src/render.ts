@@ -51,6 +51,32 @@ export function renderRows(list: HTMLElement, rows: Row[]) {
   }
 }
 
+const matches = (row: Row): number => row.phrases.filter((p) => p.exact).length;
+
+// Best first; among equals the more recent guess comes first.
+export function orderRows(rows: Row[]): Row[] {
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => matches(b.row) - matches(a.row) || b.i - a.i)
+    .map(({ row }) => row);
+}
+
+export interface GuessLists {
+  sorted: HTMLElement;
+  sortedCaption: HTMLElement;
+  latest: HTMLElement;
+  latestCaption: HTMLElement;
+}
+
+export function renderGuesses(lists: GuessLists, rows: Row[], done: boolean) {
+  const last = rows[rows.length - 1];
+  const earlier = done ? rows : rows.slice(0, -1);
+  renderRows(lists.sorted, orderRows(earlier));
+  renderRows(lists.latest, done || !last ? [] : [last]);
+  lists.sortedCaption.hidden = earlier.length < 2;
+  lists.latestCaption.hidden = done || !last || earlier.length === 0;
+}
+
 export function renderRemaining(node: HTMLElement, left: number, done: boolean) {
   node.textContent = done ? "" : left === 1 ? "1 guess left" : `${left} guesses left`;
 }
