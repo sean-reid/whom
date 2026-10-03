@@ -8,10 +8,19 @@ export class Puzzle extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS results (bucket INTEGER PRIMARY KEY, count INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS keys (key TEXT PRIMARY KEY);
     `);
+  }
+
+  // The pin this object made before Schedule held them; Schedule adopts it for the day.
+  legacyPin(): string | null {
+    const row = this.ctx.storage.sql
+      .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'qid'")
+      .toArray()[0];
+    return row ? row.value : null;
   }
 
   recorded(nonce: string): boolean {

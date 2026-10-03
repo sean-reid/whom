@@ -19,6 +19,16 @@ export async function scheduleOrder(people: Person[], seed: string): Promise<Per
   return keyed.map((k) => k.person);
 }
 
+// The pin a day keeps: an adopted one verbatim, else the walk from the candidate.
+export function choosePin(
+  n: number,
+  qids: string[],
+  taken: ReadonlySet<string>,
+  adopt: string | null,
+): string {
+  return adopt ?? qidForNumber(qids, n, taken);
+}
+
 export function qidForNumber(
   qids: string[],
   n: number,
@@ -45,4 +55,25 @@ export function personForNumber(
     pinned,
   );
   return order.find((p) => p.qid === qid) as Person;
+}
+
+export interface PinStore {
+  lookup(n: number): Promise<string | null>;
+  pin(n: number, qids: string[], adopt: string | null): Promise<string>;
+}
+
+export interface LegacyPins {
+  legacyPin(): Promise<string | null>;
+}
+
+// A day pinned by its Puzzle object before Schedule existed keeps that person.
+export async function resolvePin(
+  schedule: PinStore,
+  legacy: LegacyPins,
+  n: number,
+  qids: string[],
+): Promise<string> {
+  const stored = await schedule.lookup(n);
+  if (stored !== null) return stored;
+  return schedule.pin(n, qids, await legacy.legacyPin());
 }

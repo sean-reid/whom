@@ -13,6 +13,7 @@ import { normalizeName } from "../shared/names.ts";
 import { findPerson, loadData, type Loaded } from "./data.ts";
 import type { Env } from "./env.ts";
 import { hex, newNonce, signToken, verifyToken } from "./token.ts";
+import { resolvePin } from "./schedule.ts";
 
 export { Schedule } from "./pins.ts";
 export { Puzzle } from "./puzzle.ts";
@@ -56,7 +57,9 @@ async function answerFor(
   let qid = pins.get(n);
   if (qid === undefined) {
     const order = (await loadData(env, ctx)).order;
-    qid = await scheduleStub(env).pin(
+    qid = await resolvePin(
+      scheduleStub(env),
+      puzzleStub(env, n),
       n,
       order.map((p) => p.qid),
     );

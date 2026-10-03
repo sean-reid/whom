@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Person } from "../../shared/data";
-import { personForNumber, qidForNumber, scheduleOrder } from "../../worker/schedule";
+import {
+  choosePin,
+  personForNumber,
+  qidForNumber,
+  resolvePin,
+  scheduleOrder,
+} from "../../worker/schedule";
 
 const person = (qid: string, retired = false): Person => ({
   qid,
@@ -75,5 +81,56 @@ describe("personForNumber", () => {
       pinned.add(pick.qid);
     }
     expect(pinned.size).toBe(after.length);
+  });
+});
+
+// A Schedule stand-in with the object's rules: a stored day wins, an adopted qid is kept
+// verbatim, anything else walks past the qids other days hold.
+function fakeSchedule(rows: Record<number, string> = {}) {
+  const calls: string[] = [];
+  return {
+    calls,
+    rows,
+    lookup: async (n: number) => {
+      calls.push(`lookup ${n}`);
+      return rows[n] ?? null;
+    },
+    pin: async (n: number, qids: string[], adopt: string | null) => {
+      calls.push(`pin ${n} ${adopt ?? "walk"}`);
+      rows[n] ??= choosePin(n, qids, new Set(Object.values(rows)), adopt);
+      return rows[n];
+    },
+  };
+}
+
+const legacyOf = (qid: string | null, calls: string[]) => ({
+  legacyPin: async () => {
+    calls.push("legacy");
+    return qid;
+  },
+});
+
+describe("resolvePin", () => {
+  const qids = ["Q1", "Q2", "Q3", "Q4", "Q5"];
+  it("returns a stored pin without asking the Puzzle object", async () => {
+    const schedule = fakeSchedule({ 1: "Q4" });
+    expect(await resolvePin(schedule, legacyOf("Q9", schedule.calls), 1, qids)).toBe("Q4");
+    expect(schedule.calls).toEqual(["lookup 1"]);
+  });
+  it("adopts the Puzzle object's old pin verbatim for a day Schedule has not seen", async () => {
+    const schedule = fakeSchedule({ 2: "Q3" });
+    expect(await resolvePin(schedule, legacyOf("Q3", schedule.calls), 1, qids)).toBe("Q3");
+    expect(schedule.calls).toEqual(["lookup 1", "legacy", "pin 1 Q3"]);
+    expect(schedule.rows).toEqual({ 1: "Q3", 2: "Q3" });
+    expect(await resolvePin(schedule, legacyOf(null, schedule.calls), 1, qids)).toBe("Q3");
+  });
+  it("walks from the candidate when neither object has a pin", async () => {
+    const schedule = fakeSchedule({ 1: "Q2" });
+    expect(await resolvePin(schedule, legacyOf(null, schedule.calls), 2, qids)).toBe("Q3");
+    expect(schedule.calls).toEqual(["lookup 2", "legacy", "pin 2 walk"]);
+  });
+  it("choosePin keeps an adopted qid even when the walk would skip it", () => {
+    expect(choosePin(2, qids, new Set(["Q2"]), "Q2")).toBe("Q2");
+    expect(choosePin(2, qids, new Set(["Q2"]), null)).toBe("Q3");
   });
 });
