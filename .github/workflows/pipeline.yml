@@ -34,8 +34,12 @@ jobs:
           workspaces: tools/pipeline
       - run: cargo build --release --manifest-path tools/pipeline/Cargo.toml
       - run: tools/pipeline/target/release/pipeline download --out out
-      - run: >
-          tools/pipeline/target/release/pipeline run --out out
-          --max-fetch "${{ inputs.max_fetch || '4000' }}"
-          ${{ inputs.sample && format('--sample {0}', inputs.sample) || '' }}
-      - run: tools/pipeline/target/release/pipeline upload --out out
+      - env:
+          MAX_FETCH: ${{ inputs.max_fetch || '4000' }}
+          SAMPLE: ${{ inputs.sample }}
+        run: |
+          set -- --out out --max-fetch "$MAX_FETCH"
+          if [ -n "$SAMPLE" ]; then set -- "$@" --sample "$SAMPLE"; fi
+          tools/pipeline/target/release/pipeline run "$@"
+      - if: always()
+        run: tools/pipeline/target/release/pipeline upload --out out
