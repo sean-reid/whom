@@ -1,0 +1,23 @@
+# Changelog
+
+## 0.1.0 (2026-10-03)
+
+
+### Features
+
+* grade era and shared root as sixth and seventh phrases ([#7](https://github.com/sean-reid/whom/issues/7)) ([cab42cf](https://github.com/sean-reid/whom/commit/cab42cfba3a7d2ef596f3c4fb6ee75cf751007f5))
+* **pipeline:** era, sameAs, and shortOf on every name ([#9](https://github.com/sean-reid/whom/issues/9)) ([487265a](https://github.com/sean-reid/whom/commit/487265abbb4a15b367826a3ab1ae106ca4254da9))
+* **pipeline:** Rust tool that builds the face pool and name graph ([#3](https://github.com/sean-reid/whom/issues/3)) ([0e96b27](https://github.com/sean-reid/whom/commit/0e96b2716dd903568210c3c93da337ebafa7907b))
+* play the daily game in the browser ([#6](https://github.com/sean-reid/whom/issues/6)) ([5ac7b30](https://github.com/sean-reid/whom/commit/5ac7b300b61aac0c1bc6e59282e9c6591a8d112c))
+* shell page, worker health route, and day numbering ([c0662b1](https://github.com/sean-reid/whom/commit/c0662b109672f3551d226eebf8ecda2cb7a5532d))
+* sort earlier guesses by matches and pin the last guess by the input ([#10](https://github.com/sean-reid/whom/issues/10)) ([bcb8c82](https://github.com/sean-reid/whom/commit/bcb8c825315818dde8e49449b49f075e5a67b1c5))
+* worker api with signed tokens, puzzle durable object, and r2 data ([#4](https://github.com/sean-reid/whom/issues/4)) ([3b222f8](https://github.com/sean-reid/whom/commit/3b222f8bac3f2b88fb194be0cdf9c95095f3d26f))
+
+
+### Bug Fixes
+
+* **client:** subset the fonts, inline the stylesheet, read guesses aloud, and retry a failed fetch ([#30](https://github.com/sean-reid/whom/issues/30)) ([84abbbe](https://github.com/sean-reid/whom/commit/84abbbe1325db83ef54a224134a0cc3202d86a9b))
+* fade in only the newest guess row ([#8](https://github.com/sean-reid/whom/issues/8)) ([bf48469](https://github.com/sean-reid/whom/commit/bf4846907c046b1b0a87685cf973cf9b7d8ffc5e))
+* launch today, harden the api, and land the audit's quick wins ([#11](https://github.com/sean-reid/whom/issues/11)) ([4e022cb](https://github.com/sean-reid/whom/commit/4e022cb3ce34590886245c0f440e2ac2df0acb25))
+* **pipeline:** hold back the manifests after a failed run and land the audit fixes ([#29](https://github.com/sean-reid/whom/issues/29)) ([6a6770a](https://github.com/sean-reid/whom/commit/6a6770a4d42857c15b6eabdbc885c1d6a08b28b5))
+* **worker:** count once per client, pin days in one object, reload on a miss, and fix grading ([#28](https://github.com/sean-reid/whom/issues/28)) ([2b60cb0](https://github.com/sean-reid/whom/commit/2b60cb06ba65c61012802ce3bc2ef792e52718d3))
