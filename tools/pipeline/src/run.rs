@@ -1,17 +1,19 @@
 use crate::commons::{self, FileStatus};
 use crate::face::{self, FaceDetector, Outcome};
 use crate::http::{Client, FetchError};
-use crate::names::{GivenName, Graph};
+use crate::names::Graph;
 use crate::qlever::{self, Candidate};
-use crate::store::{self, ImageInfo, Names, Person, Pool, State, TRANSIENT_SKIP};
+use crate::store::{self, ImageInfo, Names, Person, Pool, Skip, State};
 use crate::text::{first_token, is_name_label, normalize};
+use crate::upload;
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 pub const PENDING_UPLOADS: &str = "pending-uploads.txt";
-const SAVE_EVERY: usize = 25;
+const SAVE_STATE_EVERY: usize = 25;
+const SAVE_POOL_EVERY: usize = 200;
 
 pub struct Args {
     pub out: PathBuf,
@@ -24,13 +26,66 @@ struct Report {
     scanned: usize,
     to_fetch: usize,
     fetched: usize,
-    skipped: BTreeMap<String, usize>,
+    skipped: BTreeMap<&'static str, usize>,
 }
 
 impl Report {
-    fn skip(&mut self, reason: &str) {
-        *self.skipped.entry(reason.to_string()).or_insert(0) += 1;
+    fn skip(&mut self, reason: Skip) {
+        *self.skipped.entry(reason.as_str()).or_insert(0) += 1;
     }
+
+    fn print(&self, pool: &Pool, names: &Names, graph: &Graph, client: &Client, started: Instant) {
+        println!();
+        println!("people scanned: {}", self.scanned);
+        println!("people needing a fetch: {}", self.to_fetch);
+        println!("people added: {}", self.fetched);
+        println!(
+            "pool size: {} ({} retired)",
+            pool.people.len(),
+            pool.people.iter().filter(|p| p.retired).count()
+        );
+        println!("names in graph: {}", names.names.len());
+        println!(
+            "names with an era: {}, with sameAs: {}, with shortOf: {}",
+            names.names.values().filter(|n| n.era.is_some()).count(),
+            names
+                .names
+                .values()
+                .filter(|n| !n.same_as.is_empty())
+                .count(),
+            names
+                .names
+                .values()
+                .filter(|n| !n.short_of.is_empty())
+                .count()
+        );
+        println!("given names without an English label: {}", graph.unlabelled);
+        println!(
+            "given-name labels failing the name rule: {}",
+            graph.rejected_labels
+        );
+        println!("languages seen: {}", graph.langs_seen.len());
+        println!(
+            "languages without a family: {} [{}]",
+            graph.langs_without_family.len(),
+            graph
+                .langs_without_family
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!("skips this run:");
+        for (reason, n) in &self.skipped {
+            println!("  {reason}: {n}");
+        }
+        println!("requests: {}", client.requests);
+        println!("wall time: {:.0}s", started.elapsed().as_secs_f64());
+    }
+}
+
+pub fn crop_key(qid: &str) -> String {
+    format!("crops/{qid}.jpg")
 }
 
 pub fn today() -> String {
@@ -48,35 +103,33 @@ pub fn run(args: &Args) -> Result<()> {
     let today = today();
     let crops_dir = args.out.join("crops");
     std::fs::create_dir_all(&crops_dir).context("create crops dir")?;
+    upload::clear_marker(&args.out)?;
 
     let mut state: State =
         store::read_json(&args.out.join("state.json"))?.unwrap_or_else(|| State::empty(&today));
     let mut pool: Pool =
         store::read_json(&args.out.join("pool.json"))?.unwrap_or_else(|| Pool::empty(&today));
+    let orphaned = state.reconcile(&pool);
+    if orphaned > 0 {
+        println!("{orphaned} processed people are missing from the pool; fetching them again");
+    }
     let mut client = Client::new()?;
     let mut report = Report::default();
 
-    let candidates = scan(&mut client, &state, args.sample)?;
+    let candidates = scan_and_retire(
+        &mut client,
+        qlever::ENDPOINT,
+        &state,
+        &mut pool,
+        args.sample,
+    )?;
     report.scanned = candidates.len();
     println!("scanned {} people", candidates.len());
 
-    let seen: BTreeSet<&str> = candidates.iter().map(|c| c.qid.as_str()).collect();
-    if args.sample.is_none() {
-        if scan_is_complete(candidates.len(), pool.people.len()) {
-            for p in &mut pool.people {
-                p.retired = !seen.contains(p.qid.as_str());
-            }
-        } else {
-            println!(
-                "scan returned {} people against a pool of {}; skipping retirement",
-                candidates.len(),
-                pool.people.len()
-            );
-        }
-    }
+    let index = pool.index();
     for c in &candidates {
-        if let Some(p) = pool.people.iter_mut().find(|p| p.qid == c.qid) {
-            refresh(p, c);
+        if let Some(&i) = index.get(&c.qid) {
+            pool.people[i].update_from(c);
         }
     }
 
@@ -94,11 +147,11 @@ pub fn run(args: &Args) -> Result<()> {
     let mut with_names = Vec::new();
     for c in todo {
         if c.label.trim().is_empty() {
-            state.mark_skipped(&c.qid, "no-label");
-            report.skip("no-label");
+            state.mark_skipped(&c.qid, Skip::NoLabel);
+            report.skip(Skip::NoLabel);
         } else if !c.givens.iter().any(|(_, l)| is_name_label(l.trim())) {
-            state.mark_skipped(&c.qid, "no-given-name");
-            report.skip("no-given-name");
+            state.mark_skipped(&c.qid, Skip::NoGivenName);
+            report.skip(Skip::NoGivenName);
         } else {
             with_names.push(c);
         }
@@ -117,19 +170,23 @@ pub fn run(args: &Args) -> Result<()> {
             let licences = commons::licences(&mut client, &files)?;
             for c in chunk {
                 handled += 1;
-                if handled % SAVE_EVERY == 0 {
-                    save(&args.out, &mut pool, &state, &today)?;
+                let (state_due, pool_due) = saves_due(handled);
+                if state_due {
+                    save_state(&args.out, &state, &today)?;
+                }
+                if pool_due {
+                    save_pool(&args.out, &mut pool, &today)?;
                 }
                 let licence = match licences.get(&c.file) {
                     Some(FileStatus::Licensed(l)) => l.clone(),
                     Some(FileStatus::Rejected(reason)) => {
-                        state.mark_skipped(&c.qid, reason);
-                        report.skip(reason);
+                        state.mark_skipped(&c.qid, *reason);
+                        report.skip(*reason);
                         continue;
                     }
                     Some(FileStatus::Missing) | None => {
-                        state.mark_skipped(&c.qid, "missing-file");
-                        report.skip("missing-file");
+                        state.mark_skipped(&c.qid, Skip::MissingFile);
+                        report.skip(Skip::MissingFile);
                         continue;
                     }
                 };
@@ -146,13 +203,13 @@ pub fn run(args: &Args) -> Result<()> {
                     };
                 match reason {
                     Some(reason) => {
-                        state.mark_skipped(&c.qid, &reason);
-                        report.skip(&reason);
+                        state.mark_skipped(&c.qid, reason);
+                        report.skip(reason);
                     }
                     None => {
                         state.mark_processed(&c.qid);
                         report.fetched += 1;
-                        pending.push(format!("crops/{}.jpg", c.qid));
+                        pending.push(crop_key(&c.qid));
                         pool.upsert(person_from(c, &licence));
                         println!("  {} {} ok", c.qid, c.label);
                     }
@@ -161,13 +218,14 @@ pub fn run(args: &Args) -> Result<()> {
         }
         Ok(())
     })();
-    save(&args.out, &mut pool, &state, &today)?;
+    save_state(&args.out, &state, &today)?;
+    save_pool(&args.out, &mut pool, &today)?;
     append_pending(&args.out, &pending)?;
     if let Err(e) = outcome {
         bail!("run stopped: {e}");
     }
 
-    let graph = build_graph(&mut client, &candidates, &pool)?;
+    let mut graph = build_graph(&mut client, &candidates, &pool)?;
     let languages = qlever::labels(
         &mut client,
         &graph.langs_seen.iter().cloned().collect::<Vec<_>>(),
@@ -175,63 +233,54 @@ pub fn run(args: &Args) -> Result<()> {
     let names = Names {
         version: 1,
         languages,
-        names: graph.names,
+        names: std::mem::take(&mut graph.names),
     };
     store::write_json(&args.out.join("names.json"), &names)?;
     append_pending(&args.out, &["names.json".to_string()])?;
+    upload::write_marker(&args.out)?;
 
-    println!();
-    println!("people scanned: {}", report.scanned);
-    println!("people needing a fetch: {}", report.to_fetch);
-    println!("people added: {}", report.fetched);
-    println!(
-        "pool size: {} ({} retired)",
-        pool.people.len(),
-        pool.people.iter().filter(|p| p.retired).count()
-    );
-    println!("names in graph: {}", names.names.len());
-    println!(
-        "names with an era: {}, with sameAs: {}, with shortOf: {}",
-        names.names.values().filter(|n| n.era.is_some()).count(),
-        names
-            .names
-            .values()
-            .filter(|n| !n.same_as.is_empty())
-            .count(),
-        names
-            .names
-            .values()
-            .filter(|n| !n.short_of.is_empty())
-            .count()
-    );
-    println!("given names without an English label: {}", graph.unlabelled);
-    println!(
-        "given-name labels failing the name rule: {}",
-        graph.rejected_labels
-    );
-    println!("languages seen: {}", graph.langs_seen.len());
-    println!(
-        "languages without a family: {} [{}]",
-        graph.langs_without_family.len(),
-        graph
-            .langs_without_family
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    println!("skips this run:");
-    for (reason, n) in &report.skipped {
-        println!("  {reason}: {n}");
-    }
-    println!("requests: {}", client.requests);
-    println!("wall time: {:.0}s", started.elapsed().as_secs_f64());
+    report.print(&pool, &names, &graph, &client, started);
     Ok(())
 }
 
-fn scan(client: &mut Client, state: &State, sample: Option<usize>) -> Result<Vec<Candidate>> {
+// A sample run stops scanning early and so never retires anyone.
+fn scan_and_retire(
+    client: &mut Client,
+    endpoint: &str,
+    state: &State,
+    pool: &mut Pool,
+    sample: Option<usize>,
+) -> Result<Vec<Candidate>> {
+    let candidates = scan(client, endpoint, state, sample)?;
+    if sample.is_none() {
+        retire(pool, &candidates);
+    }
+    Ok(candidates)
+}
+
+fn retire(pool: &mut Pool, candidates: &[Candidate]) {
+    if !scan_is_complete(candidates.len(), pool.people.len()) {
+        println!(
+            "scan returned {} people against a pool of {}; skipping retirement",
+            candidates.len(),
+            pool.people.len()
+        );
+        return;
+    }
+    let seen: BTreeSet<&str> = candidates.iter().map(|c| c.qid.as_str()).collect();
+    for p in &mut pool.people {
+        p.retired = !seen.contains(p.qid.as_str());
+    }
+}
+
+fn scan(
+    client: &mut Client,
+    endpoint: &str,
+    state: &State,
+    sample: Option<usize>,
+) -> Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
-    qlever::paged(client, &qlever::pool_query(), |rows| {
+    qlever::paged(client, endpoint, &qlever::pool_query(), |rows| {
         candidates.extend(rows.iter().filter_map(qlever::candidate_from_row));
         Ok(match sample {
             Some(n) => {
@@ -248,7 +297,7 @@ fn scan(client: &mut Client, state: &State, sample: Option<usize>) -> Result<Vec
 }
 
 enum Step {
-    Skip(String),
+    Skip(Skip),
     Fatal(anyhow::Error),
 }
 
@@ -261,26 +310,26 @@ fn fetch_and_crop(
 ) -> Result<(), Step> {
     let thumb = match commons::fetch_thumb(client, thumb_url) {
         Ok(t) => t,
-        Err(FetchError::NotFound) => return Err(Step::Skip("missing-file".into())),
+        Err(FetchError::NotFound) => return Err(Step::Skip(Skip::MissingFile)),
         Err(FetchError::Transient(e)) => {
             eprintln!("  {} {e}", c.qid);
-            return Err(Step::Skip(TRANSIENT_SKIP.into()));
+            return Err(Step::Skip(Skip::FetchError));
         }
         Err(e @ FetchError::Fatal(_)) => return Err(Step::Fatal(e.into())),
     };
     let Some(img) = face::decode(&thumb.content_type, &thumb.bytes) else {
-        return Err(Step::Skip("undecodable".into()));
+        return Err(Step::Skip(Skip::Undecodable));
     };
     let found = match detector.detect(&img) {
         Outcome::One(f) => f,
-        Outcome::None => return Err(Step::Skip("no-face".into())),
+        Outcome::None => return Err(Step::Skip(Skip::NoFace)),
         Outcome::Many(n) => {
             eprintln!("  {} {n} faces", c.qid);
-            return Err(Step::Skip("many-faces".into()));
+            return Err(Step::Skip(Skip::ManyFaces));
         }
         Outcome::Small(w) => {
             eprintln!("  {} face {w} px wide", c.qid);
-            return Err(Step::Skip("small-face".into()));
+            return Err(Step::Skip(Skip::SmallFace));
         }
     };
     let crop = face::crop(&img, &found);
@@ -311,20 +360,31 @@ pub fn is_nickname_form(s: &str) -> bool {
     is_name_label(s) && s.split_whitespace().count() <= MAX_NICKNAME_WORDS
 }
 
+// The label's first token stands in for a given name only for mononyms; for
+// everyone else it is a title or a stage name, not an answer.
 pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
     let mut forms: Vec<(String, String)> = Vec::new();
-    let sources = c
+    let givens: Vec<&str> = c
         .givens
         .iter()
         .map(|(_, l)| l.trim())
         .filter(|l| is_name_label(l))
+        .collect();
+    let label_token = if givens.is_empty() {
+        first_token(&c.label).filter(|t| is_name_label(t))
+    } else {
+        None
+    };
+    let sources = givens
+        .iter()
+        .copied()
         .chain(
             c.nicknames
                 .iter()
                 .map(|n| n.trim())
                 .filter(|n| is_nickname_form(n)),
         )
-        .chain(first_token(&c.label).filter(|t| is_name_label(t)));
+        .chain(label_token);
     for s in sources {
         let n = normalize(s);
         if !forms.iter().any(|(k, _)| *k == n) {
@@ -335,18 +395,35 @@ pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
     forms
 }
 
+pub fn name_keys(c: &Candidate) -> Vec<String> {
+    name_forms(c).into_iter().map(|(k, _)| k).collect()
+}
+
+impl Person {
+    pub fn update_from(&mut self, c: &Candidate) {
+        self.label = c.label.clone();
+        self.display = display_name(c);
+        self.names = name_keys(c);
+        self.born = c.born;
+        self.citizenship = c.citizenship.clone();
+        self.occupations = c.occupations.clone();
+        self.description = c.description.clone();
+        self.wiki = c.wiki.clone();
+    }
+}
+
 fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
-    Person {
+    let mut p = Person {
         qid: c.qid.clone(),
-        label: c.label.clone(),
-        display: display_name(c),
-        names: name_forms(c).into_iter().map(|(k, _)| k).collect(),
-        born: c.born,
-        citizenship: c.citizenship.clone(),
-        occupations: c.occupations.clone(),
-        description: c.description.clone(),
-        wiki: c.wiki.clone(),
-        crop: format!("crops/{}.jpg", c.qid),
+        label: String::new(),
+        display: String::new(),
+        names: Vec::new(),
+        born: 0,
+        citizenship: Vec::new(),
+        occupations: Vec::new(),
+        description: None,
+        wiki: None,
+        crop: crop_key(&c.qid),
         image: ImageInfo {
             file: c.file.clone(),
             artist: licence.artist.clone(),
@@ -355,18 +432,9 @@ fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
             page_url: commons::page_url(&c.file),
         },
         retired: false,
-    }
-}
-
-fn refresh(p: &mut Person, c: &Candidate) {
-    p.label = c.label.clone();
-    p.display = display_name(c);
-    p.names = name_forms(c).into_iter().map(|(k, _)| k).collect();
-    p.born = c.born;
-    p.citizenship = c.citizenship.clone();
-    p.occupations = c.occupations.clone();
-    p.description = c.description.clone();
-    p.wiki = c.wiki.clone();
+    };
+    p.update_from(c);
+    p
 }
 
 fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Result<Graph> {
@@ -384,14 +452,7 @@ fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Re
     println!("pool given names below that count: {}", extra.len());
     let rare = qlever::given_names_by_id(client, &extra)?;
     for g in common.iter().chain(rare.iter()) {
-        graph.add_given_name(&GivenName {
-            qid: g.qid.clone(),
-            label: g.label.clone(),
-            langs: g.langs.clone(),
-            count: g.count,
-            same_as: g.same_as.clone(),
-            hypocorism: g.hypocorism,
-        });
+        graph.add_given_name(g);
     }
     let qids: Vec<String> = graph.key_of_qid.keys().cloned().collect();
     for row in qlever::birth_years(client, &qids)? {
@@ -411,18 +472,28 @@ fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Re
     Ok(graph)
 }
 
-fn save(out: &Path, pool: &mut Pool, state: &State, today: &str) -> Result<()> {
+// pool.json is around 5 MB at full size, state.json a tenth of that.
+fn saves_due(handled: usize) -> (bool, bool) {
+    (
+        handled.is_multiple_of(SAVE_STATE_EVERY),
+        handled.is_multiple_of(SAVE_POOL_EVERY),
+    )
+}
+
+fn save_pool(out: &Path, pool: &mut Pool, today: &str) -> Result<()> {
     pool.generated = today.to_string();
     pool.sort();
-    store::write_json(&out.join("pool.json"), pool)?;
+    store::write_json(&out.join("pool.json"), pool)
+}
+
+fn save_state(out: &Path, state: &State, today: &str) -> Result<()> {
     let state_out = State {
         version: 1,
         last_run: today.to_string(),
         processed: state.processed.clone(),
         skipped: state.skipped.clone(),
     };
-    store::write_json(&out.join("state.json"), &state_out)?;
-    Ok(())
+    store::write_json(&out.join("state.json"), &state_out)
 }
 
 fn append_pending(out: &Path, keys: &[String]) -> Result<()> {
@@ -443,6 +514,7 @@ fn append_pending(out: &Path, keys: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::http::testing::{response, serve};
 
     fn candidate() -> Candidate {
         Candidate {
@@ -474,11 +546,7 @@ mod tests {
 
     #[test]
     fn name_forms_are_sorted_unique_normalized() {
-        let forms: Vec<String> = name_forms(&candidate())
-            .into_iter()
-            .map(|(k, _)| k)
-            .collect();
-        assert_eq!(forms, vec!["alan", "mathison", "prof"]);
+        assert_eq!(name_keys(&candidate()), vec!["alan", "mathison", "prof"]);
     }
 
     #[test]
@@ -490,8 +558,7 @@ mod tests {
         assert!(!is_nickname_form("The Prof (1950s)"));
         let mut c = candidate();
         c.nicknames = vec!["Pelé".into(), "a pequena notavel".into(), "Big Al".into()];
-        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(forms, vec!["alan", "big al", "mathison", "pele"]);
+        assert_eq!(name_keys(&c), vec!["alan", "big al", "mathison", "pele"]);
     }
 
     #[test]
@@ -499,10 +566,34 @@ mod tests {
         let mut c = candidate();
         c.givens.insert(0, ("Q1".into(), ".".into()));
         c.nicknames = vec!["The Prof (1950s)".into()];
-        let forms: Vec<String> = name_forms(&c).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(forms, vec!["alan", "mathison"]);
+        assert_eq!(name_keys(&c), vec!["alan", "mathison"]);
         c.label = "Turing".into();
         assert_eq!(display_name(&c), "Mathison");
+    }
+
+    #[test]
+    fn label_token_counts_only_for_mononyms() {
+        let mut c = candidate();
+        c.label = "Lady Gaga".into();
+        c.givens = vec![("Q18069632".into(), "Stefani".into())];
+        c.nicknames.clear();
+        assert_eq!(name_keys(&c), vec!["stefani"]);
+        assert_eq!(display_name(&c), "Stefani");
+        c.label = "Pelé".into();
+        c.givens.clear();
+        assert_eq!(name_keys(&c), vec!["pele"]);
+        assert_eq!(display_name(&c), "Pelé");
+        c.givens = vec![("Q1".into(), ".".into())];
+        assert_eq!(name_keys(&c), vec!["pele"]);
+    }
+
+    #[test]
+    fn state_saves_every_25_and_the_pool_every_200() {
+        assert_eq!(saves_due(24), (false, false));
+        assert_eq!(saves_due(25), (true, false));
+        assert_eq!(saves_due(175), (true, false));
+        assert_eq!(saves_due(200), (true, true));
+        assert_eq!(saves_due(401), (false, false));
     }
 
     #[test]
@@ -511,5 +602,102 @@ mod tests {
         assert!(scan_is_complete(9000, 10000));
         assert!(!scan_is_complete(8999, 10000));
         assert!(!scan_is_complete(2000, 11000));
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people
+            .extend((1..=3000).map(|i| Person::stub(&format!("Q{i}"))));
+        let candidates: Vec<Candidate> = (1..=2003).map(candidate_n).collect();
+        retire(&mut pool, &candidates);
+        assert!(pool.people.iter().all(|p| !p.retired));
+    }
+
+    fn candidate_n(i: usize) -> Candidate {
+        let mut c = candidate();
+        c.qid = format!("Q{i}");
+        c
+    }
+
+    fn page(qids: std::ops::Range<usize>) -> String {
+        let rows: Vec<String> = qids
+            .map(|i| {
+                format!(
+                    concat!(
+                        r#"{{"p":{{"value":"http://www.wikidata.org/entity/Q{i}"}},"#,
+                        r#""label":{{"value":"Person {i}"}},"#,
+                        r#""img":{{"value":"http://commons.wikimedia.org/wiki/Special:FilePath/Q{i}.jpg"}},"#,
+                        r#""dob":{{"value":"1950-01-01T00:00:00Z"}}}}"#
+                    ),
+                    i = i
+                )
+            })
+            .collect();
+        response(
+            "200 OK",
+            &[("Content-Type", "application/sparql-results+json")],
+            &format!(r#"{{"results":{{"bindings":[{}]}}}}"#, rows.join(",")),
+        )
+    }
+
+    #[test]
+    fn a_full_scan_pages_until_a_short_page_and_retires_the_unseen() {
+        let (base, handle) = serve(vec![page(1..2001), page(2001..2004)]);
+        let mut client = Client::new().unwrap();
+        let state = State::empty("2026-01-01");
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people
+            .extend(["Q1", "Q2003", "Q5000"].map(Person::stub));
+        let candidates = scan_and_retire(&mut client, &base, &state, &mut pool, None).unwrap();
+        assert_eq!(candidates.len(), 2003);
+        assert_eq!(candidates[0].qid, "Q1");
+        assert_eq!(candidates[2002].label, "Person 2003");
+        assert_eq!(client.requests, 2);
+        let lines = handle.join().unwrap();
+        assert!(
+            lines[0].ends_with("LIMIT+2000+OFFSET+0 HTTP/1.1"),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[1].ends_with("LIMIT+2000+OFFSET+2000 HTTP/1.1"),
+            "{}",
+            lines[1]
+        );
+        let retired: Vec<&str> = pool
+            .people
+            .iter()
+            .filter(|p| p.retired)
+            .map(|p| p.qid.as_str())
+            .collect();
+        assert_eq!(retired, ["Q5000"]);
+    }
+
+    #[test]
+    fn a_sample_scan_stops_early_and_retires_nobody() {
+        let (base, handle) = serve(vec![page(1..2001)]);
+        let mut client = Client::new().unwrap();
+        let state = State::empty("2026-01-01");
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(Person::stub("Q5000"));
+        let candidates = scan_and_retire(&mut client, &base, &state, &mut pool, Some(5)).unwrap();
+        assert_eq!(candidates.len(), 2000);
+        assert_eq!(client.requests, 1);
+        assert!(!pool.people[0].retired);
+        assert_eq!(handle.join().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_page_retires_nobody() {
+        let (base, handle) = serve(vec![
+            page(1..2001),
+            response("200 OK", &[], r#"{"results":{}}"#),
+        ]);
+        let mut client = Client::new().unwrap();
+        let state = State::empty("2026-01-01");
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(Person::stub("Q5000"));
+        let err = scan_and_retire(&mut client, &base, &state, &mut pool, None).unwrap_err();
+        assert!(err.to_string().contains("without bindings"), "{err}");
+        assert_eq!(client.requests, 2);
+        assert!(!pool.people[0].retired);
+        assert_eq!(handle.join().unwrap().len(), 2);
     }
 }

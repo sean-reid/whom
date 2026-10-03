@@ -1,9 +1,42 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
-pub const TRANSIENT_SKIP: &str = "fetch-error";
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Skip {
+    NoLabel,
+    NoGivenName,
+    Licence,
+    MissingFile,
+    FetchError,
+    Undecodable,
+    NoFace,
+    ManyFaces,
+    SmallFace,
+}
+
+impl Skip {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Skip::NoLabel => "no-label",
+            Skip::NoGivenName => "no-given-name",
+            Skip::Licence => "licence",
+            Skip::MissingFile => "missing-file",
+            Skip::FetchError => "fetch-error",
+            Skip::Undecodable => "undecodable",
+            Skip::NoFace => "no-face",
+            Skip::ManyFaces => "many-faces",
+            Skip::SmallFace => "small-face",
+        }
+    }
+}
+
+impl std::fmt::Display for Skip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ImageInfo {
@@ -33,6 +66,32 @@ pub struct Person {
     pub retired: bool,
 }
 
+impl Person {
+    #[cfg(test)]
+    pub fn stub(qid: &str) -> Person {
+        Person {
+            qid: qid.to_string(),
+            label: String::new(),
+            display: String::new(),
+            names: vec![],
+            born: 0,
+            citizenship: vec![],
+            occupations: vec![],
+            description: None,
+            wiki: None,
+            crop: String::new(),
+            image: ImageInfo {
+                file: String::new(),
+                artist: None,
+                licence: String::new(),
+                licence_url: None,
+                page_url: String::new(),
+            },
+            retired: false,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Pool {
     pub version: u32,
@@ -58,6 +117,14 @@ impl Pool {
 
     pub fn sort(&mut self) {
         self.people.sort_by_key(|p| qid_order(&p.qid));
+    }
+
+    pub fn index(&self) -> HashMap<String, usize> {
+        self.people
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.qid.clone(), i))
+            .collect()
     }
 }
 
@@ -108,8 +175,17 @@ impl State {
         }
         match self.skipped.get(qid) {
             None => true,
-            Some(reason) => reason == TRANSIENT_SKIP,
+            Some(reason) => reason == Skip::FetchError.as_str(),
         }
+    }
+
+    // state.json is written more often than pool.json, so a run killed between
+    // the two can list people the pool never received; they are fetched again.
+    pub fn reconcile(&mut self, pool: &Pool) -> usize {
+        let index = pool.index();
+        let before = self.processed.len();
+        self.processed.retain(|q| index.contains_key(q));
+        before - self.processed.len()
     }
 
     pub fn mark_processed(&mut self, qid: &str) {
@@ -117,8 +193,9 @@ impl State {
         self.processed.insert(qid.to_string());
     }
 
-    pub fn mark_skipped(&mut self, qid: &str, reason: &str) {
-        self.skipped.insert(qid.to_string(), reason.to_string());
+    pub fn mark_skipped(&mut self, qid: &str, reason: Skip) {
+        self.skipped
+            .insert(qid.to_string(), reason.as_str().to_string());
     }
 }
 
@@ -163,9 +240,9 @@ mod tests {
     #[test]
     fn skipped_qid_is_retried_only_after_a_transient_error() {
         let mut s = State::empty("2026-01-01");
-        s.mark_skipped("Q1", "licence");
-        s.mark_skipped("Q2", "no-face");
-        s.mark_skipped("Q3", TRANSIENT_SKIP);
+        s.mark_skipped("Q1", Skip::Licence);
+        s.mark_skipped("Q2", Skip::NoFace);
+        s.mark_skipped("Q3", Skip::FetchError);
         assert!(!s.needs_fetch("Q1"));
         assert!(!s.needs_fetch("Q2"));
         assert!(s.needs_fetch("Q3"));
@@ -179,7 +256,7 @@ mod tests {
         let mut s = State::empty("2026-01-01");
         s.mark_processed("Q9");
         s.mark_processed("Q10");
-        s.mark_skipped("Q5", "licence");
+        s.mark_skipped("Q5", Skip::Licence);
         let text = serde_json::to_string(&s).unwrap();
         assert!(text.contains(r#""processed":["Q10","Q9"]"#));
         assert!(text.contains(r#""skipped":{"Q5":"licence"}"#));
@@ -242,33 +319,35 @@ mod tests {
             .contains(r#""retired":true"#));
     }
 
+    fn pool_of(qids: &[&str]) -> Pool {
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.extend(qids.iter().map(|q| Person::stub(q)));
+        pool
+    }
+
     #[test]
     fn pool_sorts_by_numeric_qid() {
-        let mut pool = Pool::empty("2026-01-01");
-        for q in ["Q100", "Q9", "Q42"] {
-            pool.people.push(Person {
-                qid: q.into(),
-                label: String::new(),
-                display: String::new(),
-                names: vec![],
-                born: 0,
-                citizenship: vec![],
-                occupations: vec![],
-                description: None,
-                wiki: None,
-                crop: String::new(),
-                image: ImageInfo {
-                    file: String::new(),
-                    artist: None,
-                    licence: String::new(),
-                    licence_url: None,
-                    page_url: String::new(),
-                },
-                retired: false,
-            });
-        }
+        let mut pool = pool_of(&["Q100", "Q9", "Q42"]);
         pool.sort();
         let order: Vec<&str> = pool.people.iter().map(|p| p.qid.as_str()).collect();
         assert_eq!(order, ["Q9", "Q42", "Q100"]);
+        let index = pool.index();
+        assert_eq!(index["Q42"], 1);
+        assert_eq!(index.len(), 3);
+    }
+
+    #[test]
+    fn processed_people_missing_from_the_pool_are_fetched_again() {
+        let pool = pool_of(&["Q9", "Q42"]);
+        let mut s = State::empty("2026-01-01");
+        s.mark_processed("Q9");
+        s.mark_processed("Q42");
+        s.mark_processed("Q100");
+        s.mark_skipped("Q7", Skip::NoFace);
+        assert_eq!(s.reconcile(&pool), 1);
+        assert!(!s.needs_fetch("Q9"));
+        assert!(s.needs_fetch("Q100"));
+        assert!(!s.needs_fetch("Q7"));
+        assert_eq!(s.reconcile(&pool), 0);
     }
 }

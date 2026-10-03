@@ -9,3 +9,4 @@ pub mod r2;
 pub mod run;
 pub mod store;
 pub mod text;
+pub mod upload;
