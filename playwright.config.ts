@@ -24,8 +24,8 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
+  workers: 1,
   projects: [
-    { name: "api", testMatch: api },
     {
       name: "mobile",
       testIgnore: api,
@@ -46,6 +46,8 @@ export default defineConfig({
       testIgnore: api,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },
+    // Last, because its rate-limit case spends the shared 30-per-minute budget.
+    { name: "api", testMatch: api },
   ],
   webServer: {
     command: `npm run build && ${seed} && ${dev}`,

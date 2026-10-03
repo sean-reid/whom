@@ -122,6 +122,7 @@ async function loadNames() {
   try {
     const res = await getNames();
     suggestions.load(res.names);
+    if (document.activeElement === input && input.value) showSuggestions();
   } catch {
     // Without the list the input still works; the Worker rejects unknown names.
   }

@@ -1,0 +1,64 @@
+import { expect, test, type Page } from "@playwright/test";
+import { EPOCH, parseIsoDate } from "../../shared/day";
+import pool from "../fixtures/pool.json" with { type: "json" };
+
+const DAY_MS = 86_400_000;
+
+// The client reads its own clock, so before launch day the browser is moved to the first puzzle.
+async function openToday(page: Page) {
+  const epoch = parseIsoDate(EPOCH) ?? 0;
+  if (Date.now() < epoch) await page.clock.install({ time: new Date(epoch + DAY_MS / 2) });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.locator("#guess-form")).toBeVisible();
+  await expect
+    .poll(() => page.locator("#portrait").evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+}
+
+test("plays today's puzzle through to the result", async ({ page, context }, info) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openToday(page);
+  await expect(page.locator("#remaining")).toHaveText("8 guesses left");
+
+  await page.fill("#guess", "ala");
+  await expect(page.locator("#suggest li")).toContainText(["Alain", "Alan"]);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#suggest")).toBeHidden();
+
+  await page.fill("#guess", "Zzyzx");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#notice")).toHaveText("Not a name I know.");
+  await expect(page.locator("#guesses li")).toHaveCount(0);
+
+  let rows = 0;
+  for (const person of pool.people) {
+    await page.fill("#guess", person.display);
+    await page.keyboard.press("Enter");
+    rows += 1;
+    await expect(page.locator("#guesses li")).toHaveCount(rows);
+    if (rows === 2) {
+      await expect(page.locator("#facts li").first()).toHaveText(/^Born in the \d{4}s$/);
+      await page.reload();
+      await expect(page.locator("#guesses li")).toHaveCount(2);
+    }
+    if (await page.locator("#end").isVisible()) break;
+  }
+  await expect(page.locator("#end")).toBeVisible();
+  await expect(page.locator("#guess-form")).toBeHidden();
+  const winner = pool.people[rows - 1];
+  await expect(page.locator("#result")).toContainText(winner?.label ?? "");
+  await expect(page.locator("#credit")).toContainText("via Wikimedia Commons");
+  await expect(page.locator("#figures dd").first()).toHaveText("1");
+  await expect(page.locator("#dist-note")).toContainText("everyone today");
+  await page.screenshot({ path: info.outputPath("result.png"), fullPage: true });
+
+  await page.click("#share");
+  await expect(page.locator("#share-done")).toHaveText("Copied");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toMatch(/^WHOM\? #\d+ \d\/8 whom\.dwainosaur\.com$/);
+
+  await page.reload();
+  await expect(page.locator("#end")).toBeVisible();
+  await expect(page.locator("#guesses li")).toHaveCount(rows);
+});
