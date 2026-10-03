@@ -1,0 +1,10 @@
+{
+  "name": "WHOM?",
+  "short_name": "WHOM?",
+  "description": "A daily game. One famous face, eight guesses at the first name.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4efe6",
+  "theme_color": "#f4efe6",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

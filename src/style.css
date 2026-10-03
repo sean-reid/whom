@@ -1,0 +1,143 @@
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/newsreader-24pt.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  --paper: #f4efe6;
+  --ink: #1b1a17;
+  --ink-soft: #625c51;
+  --rule: #c9c1b1;
+  --shade: #e8e1d3;
+  --serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #161513;
+    --ink: #ebe5d9;
+    --ink-soft: #a29b8d;
+    --rule: #3a3731;
+    --shade: #22201c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #161513;
+  --ink: #ebe5d9;
+  --ink-soft: #a29b8d;
+  --rule: #3a3731;
+  --shade: #22201c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+  min-height: 44px;
+}
+
+button {
+  background: none;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  padding: 0 0.75rem;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.masthead,
+main,
+.colophon {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.wordmark {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.issue {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.lede {
+  margin: 1.5rem 0;
+  font-size: 1.15rem;
+}
+
+.colophon {
+  display: flex;
+  gap: 1.5rem;
+  padding-top: 1rem;
+  padding-bottom: 2rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.colophon a {
+  color: inherit;
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "whom",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"],
+  },
+  "observability": { "enabled": true },
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [{ "pattern": "whom.dwainosaur.com", "custom_domain": true }],
+  // Bindings the site actually uses. Ids come from `wrangler kv namespace create` and friends.
+  // "kv_namespaces": [{ "binding": "STORE", "id": "" }],
+  // "d1_databases": [{ "binding": "DB", "database_name": "whom", "database_id": "", "migrations_dir": "migrations" }],
+  // "r2_buckets": [{ "binding": "FILES", "bucket_name": "whom" }],
+  // "durable_objects": { "bindings": [{ "name": "COUNTERS", "class_name": "Counters" }] },
+  // "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counters"] }],
+  // "ratelimits": [{ "name": "API_RATE", "namespace_id": "1", "simple": { "limit": 60, "period": 60 } }],
+}
