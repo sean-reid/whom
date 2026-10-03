@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NameRecord, NamesFile, Person } from "../../shared/data";
 import { answerRecord, facts, hint, isWin, phrases, placeName } from "../../shared/grade";
+import { normalizeName } from "../../shared/names";
 
 const languages = { Q1860: "English", Q150: "French", Q1321: "Spanish", Q188: "German" };
 
@@ -186,6 +187,49 @@ describe("phrases", () => {
   it("adds no root phrase when the names are unrelated", () => {
     expect(phrases("william", william, "alan", alan, languages)).toHaveLength(6);
     expect(phrases("bill", bill, "alan", alan, languages)).toHaveLength(6);
+  });
+  it("folds Ł, Ø, Ð, Þ, and Æ before comparing first letters", () => {
+    const a = rec();
+    const lukasz = normalizeName("Łukasz");
+    expect(phrases("zoe", a, lukasz, a, languages)[1]?.text).toBe("starts earlier");
+    expect(phrases(lukasz, a, "zoe", a, languages)[1]?.text).toBe("starts later");
+    expect(phrases("lars", a, lukasz, a, languages)[1]).toEqual({
+      text: "same first letter",
+      exact: true,
+    });
+    expect(phrases("pierre", a, normalizeName("Øyvind"), a, languages)[1]?.text).toBe(
+      "starts earlier",
+    );
+    expect(phrases("edward", a, normalizeName("Ðorđe"), a, languages)[1]?.text).toBe(
+      "starts earlier",
+    );
+    expect(phrases("zoe", a, normalizeName("Þórður"), a, languages)[1]?.text).toBe(
+      "starts earlier",
+    );
+    expect(phrases("bill", a, normalizeName("Æsa"), a, languages)[1]?.text).toBe("starts earlier");
+  });
+  it("says sound unknown when either side has no sound code", () => {
+    const ivan = rec({ dm: "", rhyme: "" });
+    const petr = rec({ dm: "", rhyme: "" });
+    const unknown = { text: "sound unknown", exact: false };
+    const p = phrases(normalizeName("Иван"), ivan, normalizeName("Петр"), petr, languages);
+    expect(p[3]).toEqual(unknown);
+    expect(p[1]?.text).toBe("starts later");
+    expect(phrases("ivan", ivan, "alan", alan, languages)[3]).toEqual(unknown);
+    expect(phrases("alan", alan, "petr", petr, languages)[3]).toEqual(unknown);
+  });
+  it("leaves apostrophes out of the letter count", () => {
+    const a = rec();
+    expect(phrases(normalizeName("D'Angelo"), a, "daniela", a, languages)[0]).toEqual({
+      text: "same length",
+      exact: true,
+    });
+    expect(phrases("daniela", a, normalizeName("D\u2019Angelo"), a, languages)[0]?.text).toBe(
+      "same length",
+    );
+    expect(phrases("daniela", a, normalizeName("\u2018Abd"), a, languages)[0]?.text).toBe(
+      "four shorter",
+    );
   });
   it("grades records without era, sameAs, or shortOf", () => {
     const old = {
