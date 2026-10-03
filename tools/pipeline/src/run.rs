@@ -90,50 +90,57 @@ pub fn run(args: &Args) -> Result<()> {
         }
     }
 
-    let files: Vec<String> = with_names.iter().map(|c| c.file.clone()).collect();
-    let licences = commons::licences(&mut client, &files)?;
     let mut pending = Vec::new();
     let mut detector = FaceDetector::new()?;
     let mut fetched = 0;
+    let mut handled = 0;
     let outcome = (|| -> Result<()> {
-        for c in &with_names {
-            let licence = match licences.get(&c.file) {
-                Some(FileStatus::Licensed(l)) => l.clone(),
-                Some(FileStatus::Rejected(reason)) => {
-                    state.mark_skipped(&c.qid, reason);
-                    report.skip(reason);
-                    continue;
-                }
-                Some(FileStatus::Missing) | None => {
-                    state.mark_skipped(&c.qid, "missing-file");
-                    report.skip("missing-file");
-                    continue;
-                }
-            };
+        for chunk in with_names.chunks(commons::BATCH) {
             if fetched >= args.max_fetch {
                 break;
             }
-            fetched += 1;
-            let reason = match fetch_and_crop(&mut client, &mut detector, c, &crops_dir) {
-                Ok(()) => None,
-                Err(Step::Skip(reason)) => Some(reason),
-                Err(Step::Fatal(e)) => return Err(e),
-            };
-            match reason {
-                Some(reason) => {
-                    state.mark_skipped(&c.qid, &reason);
-                    report.skip(&reason);
+            let files: Vec<String> = chunk.iter().map(|c| c.file.clone()).collect();
+            let licences = commons::licences(&mut client, &files)?;
+            for c in chunk {
+                handled += 1;
+                if handled % SAVE_EVERY == 0 {
+                    save(&args.out, &mut pool, &state, &today)?;
                 }
-                None => {
-                    state.mark_processed(&c.qid);
-                    report.fetched += 1;
-                    pending.push(format!("crops/{}.jpg", c.qid));
-                    pool.upsert(person_from(c, &licence));
-                    println!("  {} {} ok", c.qid, c.label);
+                let licence = match licences.get(&c.file) {
+                    Some(FileStatus::Licensed(l)) => l.clone(),
+                    Some(FileStatus::Rejected(reason)) => {
+                        state.mark_skipped(&c.qid, reason);
+                        report.skip(reason);
+                        continue;
+                    }
+                    Some(FileStatus::Missing) | None => {
+                        state.mark_skipped(&c.qid, "missing-file");
+                        report.skip("missing-file");
+                        continue;
+                    }
+                };
+                if fetched >= args.max_fetch {
+                    continue;
                 }
-            }
-            if (report.fetched + report.skipped.values().sum::<usize>()) % SAVE_EVERY == 0 {
-                save(&args.out, &mut pool, &state, &today)?;
+                fetched += 1;
+                let reason = match fetch_and_crop(&mut client, &mut detector, c, &crops_dir) {
+                    Ok(()) => None,
+                    Err(Step::Skip(reason)) => Some(reason),
+                    Err(Step::Fatal(e)) => return Err(e),
+                };
+                match reason {
+                    Some(reason) => {
+                        state.mark_skipped(&c.qid, &reason);
+                        report.skip(&reason);
+                    }
+                    None => {
+                        state.mark_processed(&c.qid);
+                        report.fetched += 1;
+                        pending.push(format!("crops/{}.jpg", c.qid));
+                        pool.upsert(person_from(c, &licence));
+                        println!("  {} {} ok", c.qid, c.label);
+                    }
+                }
             }
         }
         Ok(())
