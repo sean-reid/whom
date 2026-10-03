@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 pub const ENDPOINT: &str = "https://qlever.dev/api/wikidata";
 pub const PAGE: usize = 2000;
 const VALUES_BATCH: usize = 500;
+const YEARS_BATCH: usize = 400;
 
 const PREFIXES: &str = "\
 PREFIX wd: <http://www.wikidata.org/entity/>
@@ -130,8 +131,12 @@ ORDER BY ?p"#
         .to_string()
 }
 
-const GIVEN_NAME_LANGS: &str =
-    r#"(GROUP_CONCAT(DISTINCT STRAFTER(STR(?lang), "entity/"); SEPARATOR="|") AS ?langs)"#;
+const GIVEN_NAME_LANGS: &str = r#"(GROUP_CONCAT(DISTINCT STRAFTER(STR(?lang), "entity/"); SEPARATOR="|") AS ?langs)
+  (GROUP_CONCAT(DISTINCT STRAFTER(STR(?same), "entity/"); SEPARATOR="|") AS ?sameAs)
+  (MAX(?hyp) AS ?hypocorism)"#;
+
+const GIVEN_NAME_LINKS: &str = r#"OPTIONAL { { ?gn wdt:P460 ?same } UNION { ?same wdt:P460 ?gn } }
+  OPTIONAL { { ?gn wdt:P31 wd:Q1130279 } UNION { ?gn wdt:P366 wd:Q1130279 } BIND(1 AS ?hyp) }"#;
 
 pub fn common_given_names_query() -> String {
     format!(
@@ -141,6 +146,7 @@ pub fn common_given_names_query() -> String {
   OPTIONAL {{ ?gn rdfs:label ?labelMul FILTER(LANG(?labelMul) = "mul") }}
   BIND(COALESCE(?labelEn, ?labelMul) AS ?label)
   OPTIONAL {{ ?gn wdt:P407 ?lang }}
+  {GIVEN_NAME_LINKS}
 }}
 GROUP BY ?gn ?label ?n
 ORDER BY ?gn"#
@@ -157,8 +163,22 @@ fn given_names_by_id_query(qids: &[&str]) -> String {
   OPTIONAL {{ ?gn rdfs:label ?labelMul FILTER(LANG(?labelMul) = "mul") }}
   BIND(COALESCE(?labelEn, ?labelMul) AS ?label)
   OPTIONAL {{ ?gn wdt:P407 ?lang }}
+  {GIVEN_NAME_LINKS}
 }}
 GROUP BY ?gn ?label"#,
+        values.join(" ")
+    )
+}
+
+fn birth_years_query(qids: &[&str]) -> String {
+    let values: Vec<String> = qids.iter().map(|q| format!("wd:{q}")).collect();
+    format!(
+        r#"SELECT ?gn ?y (COUNT(?h) AS ?n) WHERE {{
+  VALUES ?gn {{ {} }}
+  ?h wdt:P735 ?gn ; wdt:P569 ?dob .
+  BIND(YEAR(?dob) AS ?y)
+}}
+GROUP BY ?gn ?y"#,
         values.join(" ")
     )
 }
@@ -247,6 +267,8 @@ pub struct GivenNameRow {
     pub label: String,
     pub langs: Vec<String>,
     pub count: u64,
+    pub same_as: Vec<String>,
+    pub hypocorism: bool,
 }
 
 fn given_name_from_row(row: &Row) -> Option<GivenNameRow> {
@@ -258,7 +280,39 @@ fn given_name_from_row(row: &Row) -> Option<GivenNameRow> {
             .map(|u| qid_of(u).to_string())
             .collect(),
         count: row.get("n").and_then(|n| n.parse().ok()).unwrap_or(0),
+        same_as: split_multi(row.get("sameAs"))
+            .iter()
+            .map(|u| qid_of(u).to_string())
+            .collect(),
+        hypocorism: row.get("hypocorism").is_some_and(|h| h == "1"),
     })
+}
+
+pub struct BirthYearRow {
+    pub qid: String,
+    pub year: i32,
+    pub count: u64,
+}
+
+pub fn birth_years(client: &mut Client, qids: &[String]) -> Result<Vec<BirthYearRow>> {
+    let mut out = Vec::new();
+    for chunk in qids.chunks(YEARS_BATCH) {
+        let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
+        for row in query(client, &birth_years_query(&refs))? {
+            let (Some(gn), Some(y), Some(n)) = (row.get("gn"), row.get("y"), row.get("n")) else {
+                continue;
+            };
+            let (Ok(year), Ok(count)) = (y.parse(), n.parse()) else {
+                continue;
+            };
+            out.push(BirthYearRow {
+                qid: qid_of(gn).to_string(),
+                year,
+                count,
+            });
+        }
+    }
+    Ok(out)
 }
 
 pub fn common_given_names(client: &mut Client) -> Result<Vec<GivenNameRow>> {
@@ -350,6 +404,25 @@ mod tests {
             c.occupations,
             vec!["biologist", "geneticist", "university teacher"]
         );
+    }
+
+    #[test]
+    fn given_name_row_carries_links_and_the_hypocorism_flag() {
+        let r = row(&[
+            ("gn", "http://www.wikidata.org/entity/Q18245781"),
+            ("label", "Bill"),
+            ("n", "1200"),
+            ("langs", "Q1860"),
+            ("sameAs", "Q12344159|Q15282375"),
+            ("hypocorism", "1"),
+        ]);
+        let g = given_name_from_row(&r).unwrap();
+        assert_eq!(g.same_as, vec!["Q12344159", "Q15282375"]);
+        assert!(g.hypocorism);
+        let r = row(&[("gn", "http://www.wikidata.org/entity/Q1"), ("n", "60")]);
+        let g = given_name_from_row(&r).unwrap();
+        assert!(g.same_as.is_empty());
+        assert!(!g.hypocorism);
     }
 
     #[test]

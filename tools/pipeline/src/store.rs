@@ -69,6 +69,11 @@ pub struct Name {
     pub count: u64,
     pub dm: String,
     pub rhyme: String,
+    pub era: Option<i32>,
+    #[serde(rename = "sameAs")]
+    pub same_as: Vec<String>,
+    #[serde(rename = "shortOf")]
+    pub short_of: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -180,6 +185,30 @@ mod tests {
         assert!(text.contains(r#""skipped":{"Q5":"licence"}"#));
         let back: State = serde_json::from_str(&text).unwrap();
         assert_eq!(back.processed.len(), 2);
+    }
+
+    #[test]
+    fn name_record_has_the_contract_fields_in_order() {
+        let n = Name {
+            display: "Bill".into(),
+            langs: vec!["Q1860".into()],
+            families: vec!["germanic".into()],
+            count: 1200,
+            dm: "PL".into(),
+            rhyme: "PL".into(),
+            era: None,
+            same_as: vec![],
+            short_of: vec!["william".into()],
+        };
+        assert_eq!(
+            serde_json::to_string(&n).unwrap(),
+            r#"{"display":"Bill","langs":["Q1860"],"families":["germanic"],"count":1200,"dm":"PL","rhyme":"PL","era":null,"sameAs":[],"shortOf":["william"]}"#
+        );
+        let mut with_era = n.clone();
+        with_era.era = Some(1952);
+        assert!(serde_json::to_string(&with_era)
+            .unwrap()
+            .contains(r#""era":1952"#));
     }
 
     #[test]
