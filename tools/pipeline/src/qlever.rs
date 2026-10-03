@@ -38,8 +38,8 @@ pub fn query(client: &mut Client, endpoint: &str, sparql: &str) -> Result<Vec<Ro
     let full = format!("{PREFIXES}{sparql}");
     let resp = client
         .send(endpoint, |c, u| {
-            c.get(u)
-                .query(&[("query", full.as_str())])
+            c.post(u)
+                .form(&[("query", full.as_str())])
                 .header("Accept", "application/sparql-results+json")
         })
         .map_err(|e| anyhow!("qlever: {e}"))?;

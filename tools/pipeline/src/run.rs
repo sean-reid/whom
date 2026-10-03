@@ -650,16 +650,22 @@ mod tests {
         assert_eq!(candidates[0].qid, "Q1");
         assert_eq!(candidates[2002].label, "Person 2003");
         assert_eq!(client.requests, 2);
-        let lines = handle.join().unwrap();
+        let seen = handle.join().unwrap();
+        assert_eq!(seen[0].line, "POST / HTTP/1.1");
         assert!(
-            lines[0].ends_with("LIMIT+2000+OFFSET+0 HTTP/1.1"),
+            seen[0].body.starts_with("query=PREFIX+wd"),
             "{}",
-            lines[0]
+            seen[0].body
         );
         assert!(
-            lines[1].ends_with("LIMIT+2000+OFFSET+2000 HTTP/1.1"),
+            seen[0].body.ends_with("LIMIT+2000+OFFSET+0"),
             "{}",
-            lines[1]
+            seen[0].body
+        );
+        assert!(
+            seen[1].body.ends_with("LIMIT+2000+OFFSET+2000"),
+            "{}",
+            seen[1].body
         );
         let retired: Vec<&str> = pool
             .people

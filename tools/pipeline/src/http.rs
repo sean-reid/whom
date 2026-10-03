@@ -245,30 +245,60 @@ pub mod testing {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    // Serves one canned response per connection and hands back each request line.
-    pub fn serve(responses: Vec<String>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    pub struct Request {
+        pub line: String,
+        pub body: String,
+    }
+
+    // Serves one canned response per connection and hands back each request.
+    pub fn serve(responses: Vec<String>) -> (String, std::thread::JoinHandle<Vec<Request>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let handle = std::thread::spawn(move || {
             let mut seen = Vec::new();
             for body in responses {
                 let (mut stream, _) = listener.accept().unwrap();
-                let mut request = Vec::new();
-                let mut buf = [0u8; 4096];
-                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                    let n = stream.read(&mut buf).unwrap();
-                    if n == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&buf[..n]);
-                }
-                let request = String::from_utf8_lossy(&request).to_string();
-                seen.push(request.lines().next().unwrap_or("").to_string());
+                seen.push(read_request(&mut stream));
                 stream.write_all(body.as_bytes()).unwrap();
             }
             seen
         });
         (format!("http://{addr}"), handle)
+    }
+
+    fn read_request(stream: &mut std::net::TcpStream) -> Request {
+        let mut raw = Vec::new();
+        let mut buf = [0u8; 4096];
+        let header_end = loop {
+            if let Some(i) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                break i + 4;
+            }
+            let n = stream.read(&mut buf).unwrap();
+            if n == 0 {
+                break raw.len();
+            }
+            raw.extend_from_slice(&buf[..n]);
+        };
+        let head = String::from_utf8_lossy(&raw[..header_end]).to_string();
+        let length: usize = head
+            .lines()
+            .find_map(|l| {
+                l.strip_prefix("content-length: ")
+                    .or(l.strip_prefix("Content-Length: "))
+            })
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(0);
+        while raw.len() < header_end + length {
+            let n = stream.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            raw.extend_from_slice(&buf[..n]);
+        }
+        Request {
+            line: head.lines().next().unwrap_or("").to_string(),
+            body: String::from_utf8_lossy(&raw[header_end..]).to_string(),
+        }
     }
 
     pub fn response(status: &str, headers: &[(&str, &str)], body: &str) -> String {
@@ -340,9 +370,28 @@ mod tests {
             started.elapsed() >= Duration::from_secs(1),
             "second hop was not paced"
         );
-        let lines = handle.join().unwrap();
-        assert_eq!(lines[0], "GET /wiki/Special:FilePath/x.jpg HTTP/1.1");
-        assert_eq!(lines[1], "GET /thumb/x.jpg HTTP/1.1");
+        let seen = handle.join().unwrap();
+        assert_eq!(seen[0].line, "GET /wiki/Special:FilePath/x.jpg HTTP/1.1");
+        assert_eq!(seen[1].line, "GET /thumb/x.jpg HTTP/1.1");
+    }
+
+    #[test]
+    fn a_post_carries_its_form_body_through_the_paced_loop() {
+        let (base, handle) = serve(vec![response("200 OK", &[], "ok")]);
+        let mut client = Client::new().unwrap();
+        let resp = client
+            .send(&format!("{base}/api/wikidata"), |c, u| {
+                c.post(u).form(&[("query", "SELECT ?p WHERE { ?p ?q ?r }")])
+            })
+            .unwrap();
+        assert_eq!(resp.text().unwrap(), "ok");
+        assert_eq!(client.requests, 1);
+        let seen = handle.join().unwrap();
+        assert_eq!(seen[0].line, "POST /api/wikidata HTTP/1.1");
+        assert_eq!(
+            seen[0].body,
+            "query=SELECT+%3Fp+WHERE+%7B+%3Fp+%3Fq+%3Fr+%7D"
+        );
     }
 
     #[test]
