@@ -1,6 +1,15 @@
 import type { NamesFile, Person, PoolFile } from "../shared/data.ts";
-import type { Env } from "./env.ts";
 import { scheduleOrder } from "./schedule.ts";
+
+// The slice of Env the loader reads, typed by shape so a test can pass a plain object.
+export interface DataEnv {
+  FILES: { get(key: string): Promise<{ json(): Promise<unknown> } | null> };
+  PUZZLE_SEED: string;
+}
+
+interface Waiter {
+  waitUntil(promise: Promise<unknown>): void;
+}
 
 export interface Loaded {
   pool: PoolFile;
@@ -14,13 +23,13 @@ export interface Loaded {
 const TTL_MS = 3_600_000;
 let cached: { promise: Promise<Loaded>; at: number } | null = null;
 
-async function readJson<T>(bucket: R2Bucket, key: string): Promise<T> {
+async function readJson<T>(bucket: DataEnv["FILES"], key: string): Promise<T> {
   const obj = await bucket.get(key);
   if (!obj) throw new Error(`${key} is missing from R2`);
   return (await obj.json()) as T;
 }
 
-async function load(env: Env): Promise<Loaded> {
+async function load(env: DataEnv): Promise<Loaded> {
   const [pool, names] = await Promise.all([
     readJson<PoolFile>(env.FILES, "pool.json"),
     readJson<NamesFile>(env.FILES, "names.json"),
@@ -38,9 +47,13 @@ async function load(env: Env): Promise<Loaded> {
   };
 }
 
+export function resetData(): void {
+  cached = null;
+}
+
 // After the TTL the current data keeps serving while one refresh runs; a failed refresh
 // leaves the old data in place.
-export function loadData(env: Env, ctx?: ExecutionContext): Promise<Loaded> {
+export function loadData(env: DataEnv, ctx?: Waiter): Promise<Loaded> {
   const now = Date.now();
   if (!cached) {
     const promise = load(env);
@@ -62,4 +75,20 @@ export function loadData(env: Env, ctx?: ExecutionContext): Promise<Loaded> {
     ctx?.waitUntil(refresh);
   }
   return cached.promise;
+}
+
+// A qid pinned by a fresher isolate can be missing from this one's hour-old pool.
+export async function findPerson(
+  env: DataEnv,
+  ctx: Waiter | undefined,
+  qid: string,
+): Promise<{ data: Loaded; person: Person } | null> {
+  let data = await loadData(env, ctx);
+  let person = data.byQid.get(qid);
+  if (!person) {
+    resetData();
+    data = await loadData(env, ctx);
+    person = data.byQid.get(qid);
+  }
+  return person ? { data, person } : null;
 }

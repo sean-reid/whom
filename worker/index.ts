@@ -10,7 +10,7 @@ import type { Person } from "../shared/data.ts";
 import { EPOCH, dateWithinWindow, latestAllowedNumber, puzzleNumber } from "../shared/day.ts";
 import { answerRecord, facts, fallbackRecord, hint, isWin, phrases } from "../shared/grade.ts";
 import { normalizeName } from "../shared/names.ts";
-import { loadData, type Loaded } from "./data.ts";
+import { findPerson, loadData, type Loaded } from "./data.ts";
 import type { Env } from "./env.ts";
 import { newNonce, signToken, verifyToken } from "./token.ts";
 import { personForNumber } from "./schedule.ts";
@@ -46,16 +46,20 @@ const puzzleStub = (env: Env, n: number) => env.PUZZLES.get(env.PUZZLES.idFromNa
 const pins = new Map<number, string>();
 const unrecorded = new Set<string>();
 
-async function answerFor(env: Env, data: Loaded, n: number): Promise<Person> {
+async function answerFor(
+  env: Env,
+  ctx: ExecutionContext,
+  n: number,
+): Promise<{ answer: Person; data: Loaded }> {
   let qid = pins.get(n);
   if (qid === undefined) {
-    const candidate = personForNumber(data.order, n);
+    const candidate = personForNumber((await loadData(env, ctx)).order, n);
     qid = await puzzleStub(env, n).pin(candidate.qid);
     pins.set(n, qid);
   }
-  const pinned = data.byQid.get(qid);
-  if (!pinned) throw new Error(`pinned ${qid} is missing from the pool`);
-  return pinned;
+  const found = await findPerson(env, ctx, qid);
+  if (!found) throw new Error(`pinned ${qid} is missing from the pool`);
+  return { answer: found.person, data: found.data };
 }
 
 async function throttled(request: Request, env: Env): Promise<boolean> {
@@ -93,7 +97,7 @@ async function getPuzzle(
   const date = url.searchParams.get("date") ?? "";
   const n = puzzleNumber(date);
   if (n === null || n < 1 || !dateWithinWindow(date, Date.now())) return error("bad date", 400);
-  await answerFor(env, await loadData(env, ctx), n);
+  await answerFor(env, ctx, n);
   const token = await signToken(
     { n, nonce: newNonce(), guesses: [], done: false, issued: Date.now() },
     env.SESSION_SECRET,
@@ -120,8 +124,7 @@ async function postGuess(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (!game || Date.now() - game.issued > THREE_DAYS_MS) return error("bad token", 400);
   if (game.done) return error("game over", 409);
 
-  const data = await loadData(env, ctx);
-  const answer = await answerFor(env, data, game.n);
+  const { answer, data } = await answerFor(env, ctx, game.n);
   const guess = normalizeName(name);
   const guessRec = data.names.names[guess];
   if (!guessRec) return error("unknown name", 422);
@@ -172,7 +175,7 @@ async function postGuess(request: Request, env: Env, ctx: ExecutionContext): Pro
 async function getCrop(env: Env, ctx: ExecutionContext, segment: string): Promise<Response> {
   const n = parseNumber(segment, Date.now());
   if (n === null) return error("not found", 404);
-  const answer = await answerFor(env, await loadData(env, ctx), n);
+  const { answer } = await answerFor(env, ctx, n);
   const obj = await env.FILES.get(answer.crop);
   if (!obj) return error("not found", 404);
   return new Response(obj.body, {
