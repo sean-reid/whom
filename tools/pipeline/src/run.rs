@@ -26,6 +26,8 @@ struct Report {
     scanned: usize,
     to_fetch: usize,
     fetched: usize,
+    forms_dropped: usize,
+    people_without_forms: usize,
     skipped: BTreeMap<&'static str, usize>,
 }
 
@@ -39,6 +41,11 @@ impl Report {
         println!("people scanned: {}", self.scanned);
         println!("people needing a fetch: {}", self.to_fetch);
         println!("people added: {}", self.fetched);
+        println!("stale name forms dropped: {}", self.forms_dropped);
+        println!(
+            "people with no valid form, left out of the graph: {}",
+            self.people_without_forms
+        );
         println!(
             "pool size: {} ({} retired)",
             pool.people.len(),
@@ -109,14 +116,16 @@ pub fn run(args: &Args) -> Result<()> {
 
     let mut state: State =
         store::read_json(&args.out.join("state.json"))?.unwrap_or_else(|| State::empty(&today));
-    let mut pool: Pool =
-        store::read_json(&args.out.join("pool.json"))?.unwrap_or_else(|| Pool::empty(&today));
+    let (mut pool, forms_dropped) = load_pool(&args.out, &today)?;
     let orphaned = state.reconcile(&pool);
     if orphaned > 0 {
         println!("{orphaned} processed people are missing from the pool; fetching them again");
     }
     let mut client = Client::new()?;
-    let mut report = Report::default();
+    let mut report = Report {
+        forms_dropped,
+        ..Report::default()
+    };
 
     let candidates = scan_and_retire(
         &mut client,
@@ -227,7 +236,8 @@ pub fn run(args: &Args) -> Result<()> {
         bail!("run stopped: {e}");
     }
 
-    let mut graph = build_graph(&mut client, &candidates, &pool)?;
+    let mut graph = build_graph(&mut client, &candidates)?;
+    report.people_without_forms = add_pool_forms(&mut graph, &pool);
     let languages = qlever::labels(
         &mut client,
         &graph.langs_seen.iter().cloned().collect::<Vec<_>>(),
@@ -347,19 +357,18 @@ pub fn display_name(c: &Candidate) -> String {
     let wanted = normalize(token);
     c.givens
         .iter()
-        .filter(|(_, l)| is_name_label(l.trim()))
+        .filter(|(_, l)| keeps_form(l))
         .find(|(_, l)| normalize(l) == wanted)
-        .or_else(|| c.givens.iter().find(|(_, l)| is_name_label(l.trim())))
+        .or_else(|| c.givens.iter().find(|(_, l)| keeps_form(l)))
         .map(|(_, l)| l.trim().to_string())
         .unwrap_or_else(|| token.to_string())
 }
 
-const MAX_NICKNAME_WORDS: usize = 2;
-
-// A P1449 nickname counts as a name form only when it is short enough to
-// be one; longer values are sobriquets.
-pub fn is_nickname_form(s: &str) -> bool {
-    is_name_label(s) && s.split_whitespace().count() <= MAX_NICKNAME_WORDS
+// A name form is one word: longer given names and nicknames are full names,
+// sobriquets, or titles, and a stored form has no record of which it was.
+pub fn keeps_form(form: &str) -> bool {
+    let form = form.trim();
+    is_name_label(form) && !form.contains('.') && form.split_whitespace().count() == 1
 }
 
 // The label's first token stands in for a given name only for mononyms; for
@@ -370,10 +379,10 @@ pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
         .givens
         .iter()
         .map(|(_, l)| l.trim())
-        .filter(|l| is_name_label(l))
+        .filter(|l| keeps_form(l))
         .collect();
     let label_token = if givens.is_empty() {
-        first_token(&c.label).filter(|t| is_name_label(t))
+        first_token(&c.label).filter(|t| keeps_form(t))
     } else {
         None
     };
@@ -384,7 +393,7 @@ pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
             c.nicknames
                 .iter()
                 .map(|n| n.trim())
-                .filter(|n| is_nickname_form(n)),
+                .filter(|n| keeps_form(n)),
         )
         .chain(label_token);
     for s in sources {
@@ -401,7 +410,30 @@ pub fn name_keys(c: &Candidate) -> Vec<String> {
     name_forms(c).into_iter().map(|(k, _)| k).collect()
 }
 
+// Every stored form passes through the current rules on load, so a pool written
+// by an older binary cannot feed the graph; returns how many forms went.
+fn load_pool(out: &Path, today: &str) -> Result<(Pool, usize)> {
+    let mut pool: Pool =
+        store::read_json(&out.join("pool.json"))?.unwrap_or_else(|| Pool::empty(today));
+    let dropped = pool.people.iter_mut().map(Person::revalidate).sum();
+    Ok((pool, dropped))
+}
+
 impl Person {
+    pub fn revalidate(&mut self) -> usize {
+        let before = self.names.len();
+        self.names.retain(|n| keeps_form(n));
+        if !self.names.contains(&normalize(&self.display)) {
+            let token = first_token(&self.label).unwrap_or("");
+            self.display = if self.names.is_empty() || self.names.contains(&normalize(token)) {
+                token.to_string()
+            } else {
+                capitalize(&self.names[0])
+            };
+        }
+        before - self.names.len()
+    }
+
     pub fn update_from(&mut self, c: &Candidate) {
         self.label = c.label.clone();
         self.display = display_name(c);
@@ -411,6 +443,14 @@ impl Person {
         self.occupations = c.occupations.clone();
         self.description = c.description.clone();
         self.wiki = c.wiki.clone();
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -439,7 +479,7 @@ fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
     p
 }
 
-fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Result<Graph> {
+fn build_graph(client: &mut Client, candidates: &[Candidate]) -> Result<Graph> {
     let mut graph = Graph::new();
     let common = qlever::common_given_names(client)?;
     println!("given names with 50 or more holders: {}", common.len());
@@ -466,12 +506,24 @@ fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Re
             graph.ensure_form(&display);
         }
     }
+    Ok(graph)
+}
+
+// Stored forms pass the rule again here, so a pool written by another binary
+// cannot reach names.json; returns how many people had no form to offer.
+fn add_pool_forms(graph: &mut Graph, pool: &Pool) -> usize {
+    let mut without = 0;
     for p in &pool.people {
-        for n in &p.names {
+        let mut any = false;
+        for n in p.names.iter().filter(|n| keeps_form(n)) {
             graph.ensure_form(n);
+            any = true;
+        }
+        if !any {
+            without += 1;
         }
     }
-    Ok(graph)
+    without
 }
 
 // pool.json is around 5 MB at full size, state.json a tenth of that.
@@ -552,15 +604,49 @@ mod tests {
     }
 
     #[test]
-    fn nicknames_are_capped_at_two_words() {
-        assert!(is_nickname_form("Bill"));
-        assert!(is_nickname_form("Pelé"));
-        assert!(is_nickname_form("Fed Express"));
-        assert!(!is_nickname_form("a pequena notavel"));
-        assert!(!is_nickname_form("The Prof (1950s)"));
+    fn a_form_is_one_word_without_a_period() {
+        for s in ["Pelé", "Bill", "Lula", "Jean-Paul", "O'Neil"] {
+            assert!(keeps_form(s), "{s}");
+        }
+        for s in [
+            "Tony Shalhoub",
+            "A Diva dos Pés Descalços",
+            "A Pequena Notável",
+            "S.",
+            "A.",
+            "Big Al",
+            "Fed Express",
+            "Mary Ann",
+            "",
+        ] {
+            assert!(!keeps_form(s), "{s}");
+        }
         let mut c = candidate();
         c.nicknames = vec!["Pelé".into(), "a pequena notavel".into(), "Big Al".into()];
-        assert_eq!(name_keys(&c), vec!["alan", "big al", "mathison", "pele"]);
+        assert_eq!(name_keys(&c), vec!["alan", "mathison", "pele"]);
+    }
+
+    #[test]
+    fn live_junk_strings_never_become_forms_or_the_display() {
+        let mut c = candidate();
+        c.label = "Tony Shalhoub".into();
+        c.givens = vec![
+            ("Q1".into(), "Tony Shalhoub".into()),
+            ("Q2".into(), "Anthony".into()),
+        ];
+        c.nicknames = vec![
+            "Tony Shalhoub".into(),
+            "A Diva dos Pés Descalços".into(),
+            "A Pequena Notável".into(),
+            "S.".into(),
+            "A.".into(),
+        ];
+        assert_eq!(name_keys(&c), vec!["anthony"]);
+        assert_eq!(display_name(&c), "Anthony");
+        c.label = "Pelé".into();
+        c.givens.clear();
+        c.nicknames.clear();
+        assert_eq!(name_keys(&c), vec!["pele"]);
     }
 
     #[test]
@@ -596,6 +682,79 @@ mod tests {
         assert_eq!(saves_due(175), (true, false));
         assert_eq!(saves_due(200), (true, true));
         assert_eq!(saves_due(401), (false, false));
+    }
+
+    fn stored(label: &str, display: &str, names: &[&str]) -> Person {
+        let mut p = Person::stub("Q1");
+        p.label = label.into();
+        p.display = display.into();
+        p.names = names.iter().map(|n| n.to_string()).collect();
+        p
+    }
+
+    #[test]
+    fn stale_forms_are_dropped_on_load_and_display_survives() {
+        let dir = std::env::temp_dir().join(format!("whom-forms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(stored(
+            "Alan Turing",
+            "Alan",
+            &["a pequena notavel", "alan", "s.", "tony shalhoub"],
+        ));
+        pool.people.push(stored("Pelé", "Pelé", &["pele"]));
+        store::write_json(&dir.join("pool.json"), &pool).unwrap();
+        let (loaded, dropped) = load_pool(&dir, "2026-02-01").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(dropped, 3);
+        assert_eq!(loaded.people[0].names, ["alan"]);
+        assert_eq!(loaded.people[0].display, "Alan");
+        assert_eq!(loaded.people[1].names, ["pele"]);
+        assert_eq!(loaded.people[1].display, "Pelé");
+        let (empty, dropped) = load_pool(&dir, "2026-02-01").unwrap();
+        assert_eq!((empty.people.len(), dropped), (0, 0));
+    }
+
+    #[test]
+    fn display_is_rebuilt_only_when_its_form_was_dropped() {
+        let mut p = stored("Lady Gaga", "Lady Gaga", &["lady gaga", "stefani"]);
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.names, ["stefani"]);
+        assert_eq!(p.display, "Stefani");
+        let mut p = stored("Alan Turing", "Mathison", &["alan", "mathison", "a."]);
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.display, "Mathison");
+        let mut p = stored("Alan Turing", "Tony Shalhoub", &["alan", "tony shalhoub"]);
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.display, "Alan");
+    }
+
+    #[test]
+    fn a_person_with_only_junk_forms_keeps_a_display_and_is_not_retired() {
+        let mut p = stored("Tony Shalhoub", "Tony Shalhoub", &["tony shalhoub", "s."]);
+        assert_eq!(p.revalidate(), 2);
+        assert!(p.names.is_empty());
+        assert_eq!(p.display, "Tony");
+        assert!(!p.retired);
+    }
+
+    #[test]
+    fn graph_takes_only_valid_stored_forms_and_counts_people_without_one() {
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(stored(
+            "Alan Turing",
+            "Alan",
+            &["alan", "tony shalhoub", "s."],
+        ));
+        pool.people.push(stored("Tony Shalhoub", "Tony", &[]));
+        pool.people
+            .push(stored("Carmen Miranda", "Carmen", &["a pequena notavel"]));
+        let mut graph = Graph::new();
+        assert_eq!(add_pool_forms(&mut graph, &pool), 2);
+        let keys: Vec<&String> = graph.names.keys().collect();
+        assert_eq!(keys, ["alan"]);
+        assert!(!pool.people[1].retired);
     }
 
     #[test]
