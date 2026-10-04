@@ -169,6 +169,9 @@ const COUNTRIES: &[(&str, &str, &str)] = &[
     ("Q41304", "Weimar Republic", "western-europe"),
     ("Q43287", "German Empire", "western-europe"),
     ("Q27306", "Kingdom of Prussia", "western-europe"),
+    ("Q153015", "Kingdom of Saxony", "western-europe"),
+    ("Q159631", "Kingdom of Württemberg", "western-europe"),
+    ("Q1206012", "German Reich", "western-europe"),
     ("Q533534", "Cisleithania", "western-europe"),
     ("Q154195", "Kingdom of Bavaria", "western-europe"),
     ("Q170072", "Dutch Republic", "western-europe"),
@@ -194,6 +197,7 @@ const COUNTRIES: &[(&str, &str, &str)] = &[
     ),
     ("Q161885", "Kingdom of Great Britain", "northern-europe"),
     ("Q230791", "Kingdom of Scotland", "northern-europe"),
+    ("Q179876", "Kingdom of England", "northern-europe"),
     ("Q756617", "Kingdom of Denmark", "northern-europe"),
     ("Q62633", "Grand Duchy of Finland", "northern-europe"),
     ("Q8680", "British Empire", "northern-europe"),
@@ -209,8 +213,11 @@ const COUNTRIES: &[(&str, &str, &str)] = &[
     // Southern Europe
     ("Q38", "Italy", "southern-europe"),
     ("Q172579", "Kingdom of Italy", "southern-europe"),
-    ("Q170174", "Kingdom of Sardinia", "southern-europe"),
-    ("Q179200", "Kingdom of the Two Sicilies", "southern-europe"),
+    ("Q170174", "Papal States", "southern-europe"),
+    ("Q2577303", "Kingdom of Sardinia", "southern-europe"),
+    ("Q180393", "Kingdom of the Two Sicilies", "southern-europe"),
+    ("Q173065", "Kingdom of Naples", "southern-europe"),
+    ("Q80702", "Spanish Empire", "southern-europe"),
     ("Q45670", "Kingdom of Portugal", "southern-europe"),
     ("Q29", "Spain", "southern-europe"),
     ("Q45", "Portugal", "southern-europe"),
@@ -271,6 +278,7 @@ const COUNTRIES: &[(&str, &str, &str)] = &[
         "Confederate States of America",
         "northern-america",
     ),
+    ("Q170588", "Republic of Texas", "northern-america"),
     // Central America
     ("Q96", "Mexico", "central-america"),
     ("Q774", "Guatemala", "central-america"),
@@ -308,13 +316,13 @@ const COUNTRIES: &[(&str, &str, &str)] = &[
     ("Q717", "Venezuela", "south-america"),
     ("Q734", "Guyana", "south-america"),
     ("Q730", "Suriname", "south-america"),
+    ("Q199821", "Gran Colombia", "south-america"),
     // Eastern Asia
     ("Q148", "People's Republic of China", "eastern-asia"),
     ("Q8733", "Qing dynasty", "eastern-asia"),
     ("Q9903", "Ming dynasty", "eastern-asia"),
     ("Q9683", "Tang dynasty", "eastern-asia"),
     ("Q28179", "Joseon", "eastern-asia"),
-    ("Q179876", "Republic of China (1912–1949)", "eastern-asia"),
     ("Q865", "Taiwan", "eastern-asia"),
     ("Q8646", "Hong Kong", "eastern-asia"),
     ("Q14773", "Macau", "eastern-asia"),
@@ -539,6 +547,41 @@ mod tests {
         ] {
             assert_eq!(region_of_label(label), Some(slug), "{label}");
         }
+    }
+
+    fn label(qid: &str) -> Option<&'static str> {
+        COUNTRIES
+            .iter()
+            .find(|(q, _, _)| *q == qid)
+            .map(|(_, l, _)| *l)
+    }
+
+    #[test]
+    fn verified_qids_carry_their_wikidata_label_and_subregion() {
+        for (qid, name, slug) in [
+            ("Q170174", "Papal States", "southern-europe"),
+            ("Q2577303", "Kingdom of Sardinia", "southern-europe"),
+            ("Q180393", "Kingdom of the Two Sicilies", "southern-europe"),
+            ("Q173065", "Kingdom of Naples", "southern-europe"),
+            ("Q179876", "Kingdom of England", "northern-europe"),
+            ("Q80702", "Spanish Empire", "southern-europe"),
+            ("Q153015", "Kingdom of Saxony", "western-europe"),
+            ("Q1206012", "German Reich", "western-europe"),
+            ("Q7318", "Nazi Germany", "western-europe"),
+            ("Q41304", "Weimar Republic", "western-europe"),
+            ("Q159631", "Kingdom of Württemberg", "western-europe"),
+            ("Q170588", "Republic of Texas", "northern-america"),
+            ("Q199821", "Gran Colombia", "south-america"),
+            ("Q15180", "Soviet Union", "eastern-europe"),
+            ("Q34266", "Russian Empire", "eastern-europe"),
+            ("Q172579", "Kingdom of Italy", "southern-europe"),
+            ("Q33946", "Czechoslovakia", "eastern-europe"),
+        ] {
+            assert_eq!(label(qid), Some(name), "{qid}");
+            assert_eq!(region_of_qid(qid), Some(slug), "{qid}");
+        }
+        assert_eq!(label("Q179200"), None);
+        assert_eq!(region_of_qid("Q179200"), None);
     }
 
     #[test]
