@@ -38,7 +38,8 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
   await expect(page.locator("#guess")).toBeFocused();
   await expect(page.locator("#guesses li, #latest li")).toHaveCount(0);
   await page.keyboard.press("Enter");
-  await expect(page.locator("#guesses li, #latest li")).toHaveCount(1);
+  await expect(page.locator("#guesses li")).toHaveCount(0);
+  await expect(page.locator("#latest li")).toHaveCount(1);
   await expect(page.locator("#latest li .name")).toHaveText("Pierre", { ignoreCase: true });
   const phrase = await page.locator("#latest li .line > *").first().textContent();
   await expect(page.locator("#announce")).toHaveText(
@@ -54,11 +55,14 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
   await expect(second).toHaveAttribute("aria-selected", "true");
   const secondName = (await second.textContent()) ?? "";
   await page.keyboard.press("Enter");
-  await expect(page.locator("#guesses li, #latest li")).toHaveCount(2);
+  await expect(page.locator("#guesses li")).toHaveCount(2);
   await expect(page.locator("#latest li .name")).toHaveText(secondName, { ignoreCase: true });
+  await expect(page.locator("#guesses li.current .name")).toHaveText(secondName, {
+    ignoreCase: true,
+  });
   await expect(page.locator("#facts li").first()).toHaveText(/^Born in the \d{4}s$/);
   await page.reload();
-  await expect(page.locator("#guesses li")).toHaveCount(1);
+  await expect(page.locator("#guesses li")).toHaveCount(2);
   await expect(page.locator("#latest li")).toHaveCount(1);
   await page.screenshot({ path: info.outputPath("mid.png"), fullPage: true });
 
@@ -68,7 +72,9 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
     await page.fill("#guess", display);
     await page.keyboard.press("Enter");
     rows += 1;
-    await expect(page.locator("#guesses li, #latest li")).toHaveCount(rows);
+    await expect(
+      page.locator("#guesses li .name").filter({ hasText: new RegExp(`^${display}$`, "i") }),
+    ).toHaveCount(1);
     if (await page.locator("#end").isVisible()) break;
   }
   await expect(page.locator("#end")).toBeVisible();

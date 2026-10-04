@@ -38,10 +38,6 @@
         <img id="portrait" width="512" height="512" alt="Today's face" hidden />
       </figure>
       <ul class="facts" id="facts" aria-label="Facts about this person" hidden></ul>
-      <p class="caption" id="sorted-caption" hidden>Closest first</p>
-      <ol class="guesses" id="guesses" aria-label="Earlier guesses, closest first"></ol>
-      <p class="caption" id="latest-caption" hidden>Last guess</p>
-      <ol class="guesses latest" id="latest" aria-label="Your last guess"></ol>
       <form class="guess-form" id="guess-form" autocomplete="off" hidden>
         <div class="field">
           <label class="visually-hidden" for="guess">Your guess</label>
@@ -64,6 +60,10 @@
       <p class="notice" id="notice" role="status" aria-live="polite"></p>
       <p class="visually-hidden" id="announce" role="status" aria-live="polite"></p>
       <p class="remaining" id="remaining"></p>
+      <p class="caption" id="latest-caption" hidden>Last guess</p>
+      <ol class="guesses latest" id="latest" aria-label="Your last guess"></ol>
+      <p class="caption" id="sorted-caption" hidden>All guesses, closest first</p>
+      <ol class="guesses" id="guesses" aria-label="All guesses, closest first"></ol>
       <section class="end" id="end" aria-label="Result" tabindex="-1" hidden>
         <p class="result" id="result"></p>
         <p class="desc" id="desc"></p>
