@@ -81,6 +81,7 @@ test("today's puzzle returns a token with eight guesses left", async ({ request 
   expect(body.n).toBe(n);
   expect(body.guessesLeft).toBe(MAX_GUESSES);
   expect(body.token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  expect(body.names).toMatch(/^[^"\s]+$/);
 });
 
 test("bad and out of window dates are 400", async ({ request }) => {
@@ -212,7 +213,7 @@ test("the crop is a jpeg for live numbers and 404 otherwise", async ({ request }
 });
 
 test("names lists every display form, most common first", async ({ request }) => {
-  const res = await request.get("/api/names");
+  const res = await request.get("/api/names?v=test");
   expect(res.status()).toBe(200);
   expect(res.headers()["cache-control"]).toBe("public, max-age=86400");
   const { names: list } = (await res.json()) as { names: string[] };

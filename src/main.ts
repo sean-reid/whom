@@ -151,7 +151,7 @@ function moveActive(delta: number) {
 async function loadNames() {
   if (suggestions.size > 0) return;
   try {
-    const res = await getNames();
+    const res = await getNames(game?.names ?? localIsoDate());
     suggestions.load(res.names);
     if (document.activeElement === input && input.value) showSuggestions();
   } catch {
@@ -221,7 +221,15 @@ async function start() {
     say("Loading today's face");
     try {
       const res = await getPuzzle(today);
-      game = { n: res.n, token: res.token, rows: [], facts: [], done: false, won: false };
+      game = {
+        n: res.n,
+        token: res.token,
+        rows: [],
+        facts: [],
+        done: false,
+        won: false,
+        names: res.names,
+      };
       saveGame(game);
     } catch {
       offerRetry();

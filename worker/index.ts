@@ -112,12 +112,12 @@ async function getPuzzle(
   const date = url.searchParams.get("date") ?? "";
   const n = puzzleNumber(date);
   if (n === null || n < 1 || !dateWithinWindow(date, Date.now())) return error("bad date", 400);
-  await answerFor(env, ctx, n);
+  const { data } = await answerFor(env, ctx, n);
   const token = await signToken(
     { n, nonce: newNonce(), guesses: [], done: false, issued: Date.now() },
     env.SESSION_SECRET,
   );
-  const body: PuzzleResponse = { n, token, guessesLeft: MAX_GUESSES };
+  const body: PuzzleResponse = { n, token, guessesLeft: MAX_GUESSES, names: data.namesVersion };
   return json(body);
 }
 
