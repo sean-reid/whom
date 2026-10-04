@@ -49,6 +49,7 @@ impl Sleeper for ThreadSleeper {
 struct Pacer {
     gap: Duration,
     last: Option<Instant>,
+    requests: u64,
 }
 
 impl Pacer {
@@ -88,7 +89,11 @@ impl Client {
             .timeout(Duration::from_secs(300))
             .redirect(Policy::none())
             .build()?;
-        let pacer = |gap| Pacer { gap, last: None };
+        let pacer = |gap| Pacer {
+            gap,
+            last: None,
+            requests: 0,
+        };
         Ok(Client {
             inner,
             wikimedia: pacer(WIKIMEDIA_GAP),
@@ -99,6 +104,14 @@ impl Client {
             consecutive_429: 0,
             requests: 0,
         })
+    }
+
+    pub fn qlever_requests(&self) -> u64 {
+        self.qlever.requests
+    }
+
+    pub fn wikimedia_requests(&self) -> u64 {
+        self.wikimedia.requests
     }
 
     fn pacer_for(&mut self, url: &str) -> &mut Pacer {
@@ -138,7 +151,9 @@ impl Client {
         let mut redirects = 0;
         let mut backoff = BACKOFF_START;
         loop {
-            self.pacer_for(&url).wait();
+            let pacer = self.pacer_for(&url);
+            pacer.wait();
+            pacer.requests += 1;
             self.requests += 1;
             let result = build(&self.inner, &url).send();
             let resp = match result {
@@ -400,6 +415,24 @@ mod tests {
             seen[0].body,
             "query=SELECT+%3Fp+WHERE+%7B+%3Fp+%3Fq+%3Fr+%7D"
         );
+    }
+
+    #[test]
+    fn requests_are_counted_per_host_family() {
+        let mut client = Client::new().unwrap();
+        for url in [
+            "https://qlever.dev/api/wikidata",
+            "https://qlever.dev/api/wikidata",
+            "https://commons.wikimedia.org/w/api.php",
+            "https://upload.wikimedia.org/x.jpg",
+            "https://en.wikipedia.org/wiki/x",
+            "https://api.cloudflare.com/client/v4",
+        ] {
+            client.pacer_for(url).requests += 1;
+        }
+        assert_eq!(client.qlever_requests(), 2);
+        assert_eq!(client.wikimedia_requests(), 3);
+        assert_eq!(client.requests, 0);
     }
 
     #[test]

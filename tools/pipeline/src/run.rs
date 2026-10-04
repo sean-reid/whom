@@ -80,6 +80,8 @@ impl Report {
             println!("  {reason}: {n}");
         }
         println!("requests: {}", client.requests);
+        println!("qlever requests: {}", client.qlever_requests());
+        println!("wikimedia requests: {}", client.wikimedia_requests());
         println!("wall time: {:.0}s", started.elapsed().as_secs_f64());
     }
 }
