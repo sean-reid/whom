@@ -26,6 +26,7 @@ struct Report {
     scanned: usize,
     to_fetch: usize,
     fetched: usize,
+    forms_dropped: usize,
     skipped: BTreeMap<&'static str, usize>,
 }
 
@@ -39,6 +40,7 @@ impl Report {
         println!("people scanned: {}", self.scanned);
         println!("people needing a fetch: {}", self.to_fetch);
         println!("people added: {}", self.fetched);
+        println!("stale name forms dropped: {}", self.forms_dropped);
         println!(
             "pool size: {} ({} retired)",
             pool.people.len(),
@@ -109,14 +111,16 @@ pub fn run(args: &Args) -> Result<()> {
 
     let mut state: State =
         store::read_json(&args.out.join("state.json"))?.unwrap_or_else(|| State::empty(&today));
-    let mut pool: Pool =
-        store::read_json(&args.out.join("pool.json"))?.unwrap_or_else(|| Pool::empty(&today));
+    let (mut pool, forms_dropped) = load_pool(&args.out, &today)?;
     let orphaned = state.reconcile(&pool);
     if orphaned > 0 {
         println!("{orphaned} processed people are missing from the pool; fetching them again");
     }
     let mut client = Client::new()?;
-    let mut report = Report::default();
+    let mut report = Report {
+        forms_dropped,
+        ..Report::default()
+    };
 
     let candidates = scan_and_retire(
         &mut client,
@@ -400,7 +404,30 @@ pub fn name_keys(c: &Candidate) -> Vec<String> {
     name_forms(c).into_iter().map(|(k, _)| k).collect()
 }
 
+// Every stored form passes through the current rules on load, so a pool written
+// by an older binary cannot feed the graph; returns how many forms went.
+fn load_pool(out: &Path, today: &str) -> Result<(Pool, usize)> {
+    let mut pool: Pool =
+        store::read_json(&out.join("pool.json"))?.unwrap_or_else(|| Pool::empty(today));
+    let dropped = pool.people.iter_mut().map(Person::revalidate).sum();
+    Ok((pool, dropped))
+}
+
 impl Person {
+    pub fn revalidate(&mut self) -> usize {
+        let before = self.names.len();
+        self.names.retain(|n| keeps_form(n));
+        if !self.names.contains(&normalize(&self.display)) {
+            let token = first_token(&self.label).unwrap_or("");
+            self.display = if self.names.is_empty() || self.names.contains(&normalize(token)) {
+                token.to_string()
+            } else {
+                capitalize(&self.names[0])
+            };
+        }
+        before - self.names.len()
+    }
+
     pub fn update_from(&mut self, c: &Candidate) {
         self.label = c.label.clone();
         self.display = display_name(c);
@@ -410,6 +437,14 @@ impl Person {
         self.occupations = c.occupations.clone();
         self.description = c.description.clone();
         self.wiki = c.wiki.clone();
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -629,6 +664,61 @@ mod tests {
         assert_eq!(saves_due(175), (true, false));
         assert_eq!(saves_due(200), (true, true));
         assert_eq!(saves_due(401), (false, false));
+    }
+
+    fn stored(label: &str, display: &str, names: &[&str]) -> Person {
+        let mut p = Person::stub("Q1");
+        p.label = label.into();
+        p.display = display.into();
+        p.names = names.iter().map(|n| n.to_string()).collect();
+        p
+    }
+
+    #[test]
+    fn stale_forms_are_dropped_on_load_and_display_survives() {
+        let dir = std::env::temp_dir().join(format!("whom-forms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(stored(
+            "Alan Turing",
+            "Alan",
+            &["a pequena notavel", "alan", "s.", "tony shalhoub"],
+        ));
+        pool.people.push(stored("Pelé", "Pelé", &["pele"]));
+        store::write_json(&dir.join("pool.json"), &pool).unwrap();
+        let (loaded, dropped) = load_pool(&dir, "2026-02-01").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(dropped, 3);
+        assert_eq!(loaded.people[0].names, ["alan"]);
+        assert_eq!(loaded.people[0].display, "Alan");
+        assert_eq!(loaded.people[1].names, ["pele"]);
+        assert_eq!(loaded.people[1].display, "Pelé");
+        let (empty, dropped) = load_pool(&dir, "2026-02-01").unwrap();
+        assert_eq!((empty.people.len(), dropped), (0, 0));
+    }
+
+    #[test]
+    fn display_is_rebuilt_only_when_its_form_was_dropped() {
+        let mut p = stored("Lady Gaga", "Lady Gaga", &["lady gaga", "stefani"]);
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.names, ["stefani"]);
+        assert_eq!(p.display, "Stefani");
+        let mut p = stored("Alan Turing", "Mathison", &["alan", "mathison", "a."]);
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.display, "Mathison");
+        let mut p = stored("Alan Turing", "Tony Shalhoub", &["alan", "tony shalhoub"]);
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.display, "Alan");
+    }
+
+    #[test]
+    fn a_person_with_only_junk_forms_keeps_a_display_and_is_not_retired() {
+        let mut p = stored("Tony Shalhoub", "Tony Shalhoub", &["tony shalhoub", "s."]);
+        assert_eq!(p.revalidate(), 2);
+        assert!(p.names.is_empty());
+        assert_eq!(p.display, "Tony");
+        assert!(!p.retired);
     }
 
     #[test]
