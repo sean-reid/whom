@@ -28,6 +28,7 @@ struct Report {
     fetched: usize,
     forms_dropped: usize,
     people_without_forms: usize,
+    title_cased_forms: usize,
     skipped: BTreeMap<&'static str, usize>,
 }
 
@@ -45,6 +46,10 @@ impl Report {
         println!(
             "people with no valid form, left out of the graph: {}",
             self.people_without_forms
+        );
+        println!(
+            "pool-only forms shown title-cased for want of a source: {}",
+            self.title_cased_forms
         );
         println!(
             "pool size: {} ({} retired)",
@@ -237,7 +242,9 @@ pub fn run(args: &Args) -> Result<()> {
     }
 
     let mut graph = build_graph(&mut client, &candidates)?;
-    report.people_without_forms = add_pool_forms(&mut graph, &pool);
+    let added = add_pool_forms(&mut graph, &pool);
+    report.people_without_forms = added.people_without_forms;
+    report.title_cased_forms = added.title_cased;
     let languages = qlever::labels(
         &mut client,
         &graph.langs_seen.iter().cloned().collect::<Vec<_>>(),
@@ -514,21 +521,46 @@ fn build_graph(client: &mut Client, candidates: &[Candidate]) -> Result<Graph> {
     Ok(graph)
 }
 
+#[derive(Default, Debug, PartialEq)]
+struct PoolForms {
+    people_without_forms: usize,
+    title_cased: usize,
+}
+
 // Stored forms pass the rule again here, so a pool written by another binary
-// cannot reach names.json; returns how many people had no form to offer.
-fn add_pool_forms(graph: &mut Graph, pool: &Pool) -> usize {
-    let mut without = 0;
+// cannot reach names.json. A form with no given-name item shows as the cased
+// text the person carries for it, else title-cased.
+fn add_pool_forms(graph: &mut Graph, pool: &Pool) -> PoolForms {
+    let mut out = PoolForms::default();
     for p in &pool.people {
         let mut any = false;
         for n in p.names.iter().filter(|n| keeps_form(n)) {
-            graph.ensure_form(n);
             any = true;
+            if graph.names.contains_key(n) {
+                continue;
+            }
+            let cased = match p.form_displays.get(n) {
+                Some(d) => d.clone(),
+                None if normalize(&p.display) == *n => p.display.clone(),
+                None => {
+                    out.title_cased += 1;
+                    title_case(n)
+                }
+            };
+            graph.ensure_form(&cased);
         }
         if !any {
-            without += 1;
+            out.people_without_forms += 1;
         }
     }
-    without
+    out
+}
+
+pub fn title_case(s: &str) -> String {
+    s.split(' ')
+        .map(|w| w.split('-').map(capitalize).collect::<Vec<_>>().join("-"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 // pool.json is around 5 MB at full size, state.json a tenth of that.
@@ -780,10 +812,65 @@ mod tests {
         pool.people
             .push(stored("Carmen Miranda", "Carmen", &["a pequena notavel"]));
         let mut graph = Graph::new();
-        assert_eq!(add_pool_forms(&mut graph, &pool), 2);
+        assert_eq!(
+            add_pool_forms(&mut graph, &pool),
+            PoolForms {
+                people_without_forms: 2,
+                title_cased: 0
+            }
+        );
         let keys: Vec<&String> = graph.names.keys().collect();
         assert_eq!(keys, ["alan"]);
+        assert_eq!(graph.names["alan"].display, "Alan");
         assert!(!pool.people[1].retired);
+    }
+
+    #[test]
+    fn a_label_only_form_keeps_its_case_in_the_graph() {
+        let mut c = candidate();
+        c.qid = "Q57621".into();
+        c.label = "Hifikepunye Pohamba".into();
+        c.givens.clear();
+        c.nicknames.clear();
+        let mut p = Person::stub(&c.qid);
+        p.update_from(&c);
+        assert_eq!(p.names, ["hifikepunye"]);
+        assert_eq!(p.form_displays["hifikepunye"], "Hifikepunye");
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(p);
+        let mut graph = Graph::new();
+        assert_eq!(add_pool_forms(&mut graph, &pool), PoolForms::default());
+        assert_eq!(graph.names["hifikepunye"].display, "Hifikepunye");
+    }
+
+    #[test]
+    fn a_stored_person_without_cased_forms_falls_back_to_display_then_title_case() {
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(stored(
+            "Antonín Novotný",
+            "Antonín",
+            &["antonin", "jean-paul", "tonda"],
+        ));
+        let mut graph = Graph::new();
+        graph.ensure_form("Tonda");
+        assert_eq!(
+            add_pool_forms(&mut graph, &pool),
+            PoolForms {
+                people_without_forms: 0,
+                title_cased: 1
+            }
+        );
+        assert_eq!(graph.names["antonin"].display, "Antonín");
+        assert_eq!(graph.names["jean-paul"].display, "Jean-Paul");
+        assert_eq!(graph.names["tonda"].display, "Tonda");
+    }
+
+    #[test]
+    fn title_case_uppercases_each_word_and_hyphen_part() {
+        assert_eq!(title_case("hifikepunye"), "Hifikepunye");
+        assert_eq!(title_case("jean-paul"), "Jean-Paul");
+        assert_eq!(title_case("mary ann"), "Mary Ann");
+        assert_eq!(title_case("o'neil"), "O'neil");
     }
 
     #[test]
