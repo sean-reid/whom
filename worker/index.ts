@@ -164,19 +164,17 @@ async function postGuess(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (replayed) return error("game over", 409);
   const next = await signToken({ ...game, guesses, done }, env.SESSION_SECRET);
   const answerName = normalizeName(answer.display);
-  const languages = data.names.languages;
+  const regions = data.names.regions ?? {};
   const res: GuessResponse = {
     token: next,
     name: guessRec.display,
-    phrases: won
-      ? phrases(guess, guessRec, guess, guessRec, languages)
-      : phrases(guess, guessRec, answerName, answerRec, languages),
+    phrases: phrases(guess, guessRec, answerName, answerRec, regions),
     facts: facts(answer, guesses.length),
     guessesLeft: MAX_GUESSES - guesses.length,
     done,
     won,
   };
-  const tip = hint(answerRec, guesses.length, languages);
+  const tip = hint(answerRec, guesses.length, regions);
   if (tip !== undefined) res.hint = tip;
   if (done) {
     res.reveal = {

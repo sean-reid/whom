@@ -14,6 +14,16 @@
     "Q9027": "Swedish",
     "Q9067": "Hungarian"
   },
+  "regions": {
+    "western-europe": "Western Europe",
+    "northern-europe": "Northern Europe",
+    "southern-europe": "Southern Europe",
+    "eastern-europe": "Eastern Europe",
+    "northern-america": "Northern America",
+    "central-america": "Central America",
+    "south-america": "South America",
+    "southern-africa": "Southern Africa"
+  },
   "names": {
     "alan": {
       "display": "Alan",
@@ -23,6 +33,9 @@
       "dm": "ALN",
       "rhyme": "LN",
       "era": 1952,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.38,
       "sameAs": ["allan", "allen"]
     },
     "alec": {
@@ -32,7 +45,10 @@
       "count": 2100,
       "dm": "ALK",
       "rhyme": "LK",
-      "era": 1948
+      "era": 1948,
+      "region": "northern-europe",
+      "continent": "europe",
+      "regionShare": 0.52
     },
     "william": {
       "display": "William",
@@ -41,7 +57,10 @@
       "count": 210000,
       "dm": "ALM",
       "rhyme": "LM",
-      "era": 1925
+      "era": 1925,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.41
     },
     "bill": {
       "display": "Bill",
@@ -51,6 +70,9 @@
       "dm": "PL",
       "rhyme": "PL",
       "era": 1935,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.63,
       "shortOf": ["william"]
     },
     "edward": {
@@ -60,7 +82,10 @@
       "count": 66000,
       "dm": "ATRT",
       "rhyme": "RT",
-      "era": 1920
+      "era": 1920,
+      "region": "northern-europe",
+      "continent": "europe",
+      "regionShare": 0.44
     },
     "grace": {
       "display": "Grace",
@@ -69,7 +94,10 @@
       "count": 9000,
       "dm": "KRS",
       "rhyme": "RS",
-      "era": 1945
+      "era": 1945,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.47
     },
     "gracie": {
       "display": "Gracie",
@@ -79,6 +107,9 @@
       "dm": "KRS",
       "rhyme": "RS",
       "era": 1980,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.58,
       "shortOf": ["grace"]
     },
     "nelson": {
@@ -88,7 +119,10 @@
       "count": 5200,
       "dm": "NLSN",
       "rhyme": "SN",
-      "era": 1950
+      "era": 1950,
+      "region": "southern-africa",
+      "continent": "africa",
+      "regionShare": 0.36
     },
     "audrey": {
       "display": "Audrey",
@@ -97,7 +131,10 @@
       "count": 4300,
       "dm": "ATR",
       "rhyme": "TR",
-      "era": 1940
+      "era": 1940,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.49
     },
     "frida": {
       "display": "Frida",
@@ -107,6 +144,9 @@
       "dm": "FRT",
       "rhyme": "RT",
       "era": 1955,
+      "region": "central-america",
+      "continent": "americas",
+      "regionShare": 0.34,
       "sameAs": ["frieda"]
     },
     "frieda": {
@@ -117,6 +157,9 @@
       "dm": "FRT",
       "rhyme": "RT",
       "era": 1920,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.57,
       "sameAs": ["frida"]
     },
     "ellen": {
@@ -126,7 +169,10 @@
       "count": 17000,
       "dm": "ALN",
       "rhyme": "LN",
-      "era": 1950
+      "era": 1950,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.42
     },
     "helen": {
       "display": "Helen",
@@ -135,7 +181,10 @@
       "count": 24000,
       "dm": "HLN",
       "rhyme": "LN",
-      "era": 1935
+      "era": 1935,
+      "region": "northern-europe",
+      "continent": "europe",
+      "regionShare": 0.39
     },
     "alain": {
       "display": "Alain",
@@ -144,7 +193,10 @@
       "count": 22000,
       "dm": "ALN",
       "rhyme": "LN",
-      "era": 1948
+      "era": 1948,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.81
     },
     "allan": {
       "display": "Allan",
@@ -154,6 +206,9 @@
       "dm": "ALN",
       "rhyme": "LN",
       "era": 1950,
+      "region": "northern-europe",
+      "continent": "europe",
+      "regionShare": 0.46,
       "sameAs": ["alan", "allen"]
     },
     "allen": {
@@ -164,6 +219,9 @@
       "dm": "ALN",
       "rhyme": "LN",
       "era": 1945,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.66,
       "sameAs": ["alan", "allan"]
     },
     "ian": {
@@ -173,7 +231,10 @@
       "count": 15000,
       "dm": "AN",
       "rhyme": "AN",
-      "era": 1960
+      "era": 1960,
+      "region": "northern-europe",
+      "continent": "europe",
+      "regionShare": 0.61
     },
     "maria": {
       "display": "Maria",
@@ -182,7 +243,10 @@
       "count": 420000,
       "dm": "MR",
       "rhyme": "MR",
-      "era": 1950
+      "era": 1950,
+      "region": "southern-europe",
+      "continent": "europe",
+      "regionShare": 0.33
     },
     "marie": {
       "display": "Marie",
@@ -191,7 +255,10 @@
       "count": 160000,
       "dm": "MR",
       "rhyme": "MR",
-      "era": 1930
+      "era": 1930,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.54
     },
     "mary": {
       "display": "Mary",
@@ -200,7 +267,10 @@
       "count": 120000,
       "dm": "MR",
       "rhyme": "MR",
-      "era": 1925
+      "era": 1925,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.48
     },
     "jose": {
       "display": "José",
@@ -209,7 +279,10 @@
       "count": 330000,
       "dm": "HS",
       "rhyme": "HS",
-      "era": 1955
+      "era": 1955,
+      "region": "south-america",
+      "continent": "americas",
+      "regionShare": 0.37
     },
     "antonin": {
       "display": "Antonín",
@@ -218,7 +291,10 @@
       "count": 7000,
       "dm": "ANTN",
       "rhyme": "TN",
-      "era": 1935
+      "era": 1935,
+      "region": "eastern-europe",
+      "continent": "europe",
+      "regionShare": 0.72
     },
     "john": {
       "display": "John",
@@ -227,7 +303,10 @@
       "count": 480000,
       "dm": "JN",
       "rhyme": "JN",
-      "era": 1935
+      "era": 1935,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.45
     },
     "jean": {
       "display": "Jean",
@@ -236,7 +315,10 @@
       "count": 250000,
       "dm": "JN",
       "rhyme": "JN",
-      "era": 1940
+      "era": 1940,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.77
     },
     "juan": {
       "display": "Juan",
@@ -245,7 +327,10 @@
       "count": 200000,
       "dm": "JN",
       "rhyme": "JN",
-      "era": 1960
+      "era": 1960,
+      "region": "south-america",
+      "continent": "americas",
+      "regionShare": 0.43
     },
     "pierre": {
       "display": "Pierre",
@@ -254,7 +339,10 @@
       "count": 110000,
       "dm": "PR",
       "rhyme": "PR",
-      "era": 1945
+      "era": 1945,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.79
     },
     "carlos": {
       "display": "Carlos",
@@ -263,7 +351,10 @@
       "count": 180000,
       "dm": "KRLS",
       "rhyme": "LS",
-      "era": 1962
+      "era": 1962,
+      "region": "south-america",
+      "continent": "americas",
+      "regionShare": 0.41
     },
     "anna": {
       "display": "Anna",
@@ -272,7 +363,10 @@
       "count": 210000,
       "dm": "AN",
       "rhyme": "AN",
-      "era": 1955
+      "era": 1955,
+      "region": "eastern-europe",
+      "continent": "europe",
+      "regionShare": 0.31
     },
     "ann": {
       "display": "Ann",
@@ -281,7 +375,10 @@
       "count": 19000,
       "dm": "AN",
       "rhyme": "AN",
-      "era": 1940
+      "era": 1940,
+      "region": "northern-america",
+      "continent": "americas",
+      "regionShare": 0.55
     },
     "nicolas": {
       "display": "Nicolas",
@@ -290,7 +387,10 @@
       "count": 60000,
       "dm": "NKLS",
       "rhyme": "LS",
-      "era": 1965
+      "era": 1965,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.62
     },
     "sean": {
       "display": "Seán",
@@ -299,7 +399,10 @@
       "count": 14000,
       "dm": "SN",
       "rhyme": "SN",
-      "era": 1972
+      "era": 1972,
+      "region": "northern-europe",
+      "continent": "europe",
+      "regionShare": 0.56
     },
     "giovanni": {
       "display": "Giovanni",
@@ -308,7 +411,10 @@
       "count": 95000,
       "dm": "JFN",
       "rhyme": "FN",
-      "era": 1930
+      "era": 1930,
+      "region": "southern-europe",
+      "continent": "europe",
+      "regionShare": 0.84
     },
     "laszlo": {
       "display": "László",
@@ -317,7 +423,10 @@
       "count": 21000,
       "dm": "LSL",
       "rhyme": "SL",
-      "era": 1945
+      "era": 1945,
+      "region": "eastern-europe",
+      "continent": "europe",
+      "regionShare": 0.88
     },
     "ada": {
       "display": "Ada",
@@ -326,7 +435,10 @@
       "count": 3800,
       "dm": "AT",
       "rhyme": "AT",
-      "era": 1935
+      "era": 1935,
+      "region": "northern-europe",
+      "continent": "europe",
+      "regionShare": 0.35
     },
     "jean-paul": {
       "display": "Jean-Paul",
@@ -335,7 +447,10 @@
       "count": 9500,
       "dm": "JNPL",
       "rhyme": "PL",
-      "era": 1948
+      "era": 1948,
+      "region": "western-europe",
+      "continent": "europe",
+      "regionShare": 0.83
     }
   }
 }

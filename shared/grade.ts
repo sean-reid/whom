@@ -24,6 +24,8 @@ export function fallbackRecord(answer: Person): NameRecord {
     dm: "",
     rhyme: "",
     era: null,
+    region: null,
+    continent: null,
   };
 }
 
@@ -37,8 +39,10 @@ function lengthPhrase(guess: string, answer: string): Phrase {
   const diff = letters(answer) - letters(guess);
   if (diff === 0) return { text: "same length", exact: true };
   const side = diff < 0 ? "shorter" : "longer";
-  const word = COUNTS[Math.abs(diff) - 1];
-  return { text: word ? `${word} ${side}` : `much ${side}`, exact: false };
+  const n = Math.abs(diff);
+  const word = COUNTS[n - 1];
+  if (!word) return { text: `much ${side}`, exact: false };
+  return { text: `${word} ${n === 1 ? "letter" : "letters"} ${side}`, exact: false };
 }
 
 // NFKD leaves these letters whole; the pipeline folds them the same way in text.rs.
@@ -66,41 +70,58 @@ function firstLetterPhrase(guess: string, answer: string): Phrase {
   const g = firstLetter(guess);
   const a = firstLetter(answer);
   if (g === a) return { text: "same first letter", exact: true };
-  return { text: a < g ? "starts earlier" : "starts later", exact: false };
+  const side = a < g ? "earlier" : "later";
+  return { text: `starts ${side} in the alphabet`, exact: false };
 }
 
 const capitalise = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-function languagePhrase(
+const regionLabel = (slug: string, regions: Record<string, string>): string =>
+  regions[slug] ?? slug.split("-").map(capitalise).join(" ");
+
+const CONTINENT_ADJECTIVES: Record<string, string> = {
+  europe: "European",
+  americas: "American",
+  asia: "Asian",
+  africa: "African",
+  oceania: "Oceanian",
+};
+
+function regionPhrase(
   guess: NameRecord,
   answer: NameRecord,
-  languages: Record<string, string>,
+  regions: Record<string, string>,
 ): Phrase {
-  const shared = answer.langs.find((l) => guess.langs.includes(l));
-  if (shared) return { text: `same language (${languages[shared] ?? shared})`, exact: true };
-  const family = answer.families.find((f) => guess.families.includes(f));
-  if (family) return { text: `same family (${capitalise(family)})`, exact: false };
-  const unknown = (r: NameRecord) => r.langs.length === 0 && r.families.length === 0;
-  if (unknown(guess) || unknown(answer)) return { text: "language unknown", exact: false };
-  return { text: "different family", exact: false };
+  if (!guess.region || !answer.region) return { text: "region unknown", exact: false };
+  if (guess.region === answer.region)
+    return { text: `both common in ${regionLabel(answer.region, regions)}`, exact: true };
+  if (guess.continent && guess.continent === answer.continent) {
+    const adjective = CONTINENT_ADJECTIVES[answer.continent] ?? capitalise(answer.continent);
+    return { text: `both ${adjective} names`, exact: false };
+  }
+  return { text: "from a different part of the world", exact: false };
 }
 
 function soundPhrase(guess: NameRecord, answer: NameRecord): Phrase {
   if (guess.dm === "" || answer.dm === "") return { text: "sound unknown", exact: false };
-  if (guess.dm === answer.dm) return { text: "sounds the same", exact: true };
+  if (guess.dm === answer.dm) return { text: "sounds alike", exact: true };
   if (guess.dm.charAt(0) === answer.dm.charAt(0))
     return { text: "starts with the same sound", exact: false };
-  if (guess.rhyme === answer.rhyme) return { text: "rhymes", exact: false };
+  if (guess.rhyme === answer.rhyme) return { text: "ends the same way", exact: false };
   return { text: "no shared sound", exact: false };
 }
 
-const bucket = (count: number): number => Math.floor(Math.log2(count + 1));
+// Three steps per doubling of holders.
+const bucket = (count: number): number => Math.floor(3 * Math.log2(count + 1));
 
 function popularityPhrase(guess: NameRecord, answer: NameRecord): Phrase {
   const diff = bucket(answer.count) - bucket(guess.count);
   if (diff === 0) return { text: "equally common", exact: true };
   const side = diff < 0 ? "rarer" : "more common";
-  return { text: Math.abs(diff) === 1 ? side : `much ${side}`, exact: false };
+  const gap = Math.abs(diff);
+  if (gap <= 2) return { text: `a bit ${side}`, exact: false };
+  if (gap <= 5) return { text: side, exact: false };
+  return { text: `much ${side}`, exact: false };
 }
 
 const ERA_SPAN = 10;
@@ -115,12 +136,12 @@ function eraPhrase(
   const a = answerRec.era;
   if (typeof g !== "number" || typeof a !== "number") {
     return guess === answer
-      ? { text: "same era", exact: true }
+      ? { text: "same generation", exact: true }
       : { text: "era unknown", exact: false };
   }
   const diff = a - g;
-  if (Math.abs(diff) <= ERA_SPAN) return { text: "same era", exact: true };
-  return { text: diff < 0 ? "an older name" : "a newer name", exact: false };
+  if (Math.abs(diff) <= ERA_SPAN) return { text: "same generation", exact: true };
+  return { text: diff < 0 ? "an earlier generation" : "a later generation", exact: false };
 }
 
 function rootPhrase(
@@ -143,12 +164,12 @@ export function phrases(
   guessRec: NameRecord,
   answer: string,
   answerRec: NameRecord,
-  languages: Record<string, string>,
+  regions: Record<string, string> = {},
 ): Phrase[] {
   const out = [
     lengthPhrase(guess, answer),
     firstLetterPhrase(guess, answer),
-    languagePhrase(guessRec, answerRec, languages),
+    regionPhrase(guessRec, answerRec, regions),
     soundPhrase(guessRec, answerRec),
     popularityPhrase(guessRec, answerRec),
     eraPhrase(guess, guessRec, answer, answerRec),
@@ -161,11 +182,11 @@ export function phrases(
 export function hint(
   answerRec: NameRecord,
   guessCount: number,
-  languages: Record<string, string>,
+  regions: Record<string, string> = {},
 ): string | undefined {
-  const lang = answerRec.langs[0];
-  if (guessCount < 5 || lang === undefined) return undefined;
-  return `the answer is used in ${languages[lang] ?? lang}`;
+  const region = answerRec.region;
+  if (guessCount < 5 || !region) return undefined;
+  return `the answer is common in ${regionLabel(region, regions)}`;
 }
 
 const article = (word: string): string => (/^[aeio]|^u(?!ni|se|su|ro)/i.test(word) ? "an" : "a");
