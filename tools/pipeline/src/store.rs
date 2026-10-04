@@ -55,6 +55,12 @@ pub struct Person {
     pub label: String,
     pub display: String,
     pub names: Vec<String>,
+    #[serde(
+        rename = "formDisplays",
+        default,
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub form_displays: BTreeMap<String, String>,
     pub born: i32,
     pub citizenship: Vec<String>,
     pub occupations: Vec<String>,
@@ -74,6 +80,7 @@ impl Person {
             label: String::new(),
             display: String::new(),
             names: vec![],
+            form_displays: BTreeMap::new(),
             born: 0,
             citizenship: vec![],
             occupations: vec![],
@@ -295,6 +302,7 @@ mod tests {
             label: "A B".into(),
             display: "A".into(),
             names: vec!["a".into()],
+            form_displays: BTreeMap::new(),
             born: 1950,
             citizenship: vec![],
             occupations: vec![],
@@ -312,6 +320,14 @@ mod tests {
         };
         let text = serde_json::to_string(&p).unwrap();
         assert!(!text.contains("retired"));
+        assert!(!text.contains("formDisplays"));
+        let mut cased = p.clone();
+        cased.form_displays.insert("a".into(), "Á".into());
+        assert!(serde_json::to_string(&cased)
+            .unwrap()
+            .contains(r#""formDisplays":{"a":"Á"}"#));
+        let back: Person = serde_json::from_str(&text).unwrap();
+        assert!(back.form_displays.is_empty());
         let mut r = p.clone();
         r.retired = true;
         assert!(serde_json::to_string(&r)

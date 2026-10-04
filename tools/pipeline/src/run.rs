@@ -423,6 +423,8 @@ impl Person {
     pub fn revalidate(&mut self) -> usize {
         let before = self.names.len();
         self.names.retain(|n| keeps_form(n));
+        let names = &self.names;
+        self.form_displays.retain(|k, _| names.contains(k));
         if !self.names.contains(&normalize(&self.display)) {
             let token = first_token(&self.label).unwrap_or("");
             self.display = if self.names.is_empty() || self.names.contains(&normalize(token)) {
@@ -437,7 +439,9 @@ impl Person {
     pub fn update_from(&mut self, c: &Candidate) {
         self.label = c.label.clone();
         self.display = display_name(c);
-        self.names = name_keys(c);
+        let forms = name_forms(c);
+        self.names = forms.iter().map(|(k, _)| k.clone()).collect();
+        self.form_displays = forms.into_iter().collect();
         self.born = c.born;
         self.citizenship = c.citizenship.clone();
         self.occupations = c.occupations.clone();
@@ -460,6 +464,7 @@ fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
         label: String::new(),
         display: String::new(),
         names: Vec::new(),
+        form_displays: BTreeMap::new(),
         born: 0,
         citizenship: Vec::new(),
         occupations: Vec::new(),
@@ -728,6 +733,30 @@ mod tests {
         let mut p = stored("Alan Turing", "Tony Shalhoub", &["alan", "tony shalhoub"]);
         assert_eq!(p.revalidate(), 1);
         assert_eq!(p.display, "Alan");
+    }
+
+    #[test]
+    fn update_from_keeps_the_cased_text_of_every_form() {
+        let mut p = Person::stub("Q7251");
+        p.update_from(&candidate());
+        assert_eq!(p.names, ["alan", "mathison", "prof"]);
+        assert_eq!(
+            p.form_displays,
+            BTreeMap::from([
+                ("alan".to_string(), "Alan".to_string()),
+                ("mathison".to_string(), "Mathison".to_string()),
+                ("prof".to_string(), "Prof".to_string()),
+            ])
+        );
+        let mut p = stored("Lady Gaga", "Lady Gaga", &["lady gaga", "stefani"]);
+        p.form_displays
+            .insert("lady gaga".into(), "Lady Gaga".into());
+        p.form_displays.insert("stefani".into(), "Stefani".into());
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(
+            p.form_displays,
+            BTreeMap::from([("stefani".to_string(), "Stefani".to_string())])
+        );
     }
 
     #[test]
