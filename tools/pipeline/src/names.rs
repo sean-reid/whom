@@ -1,8 +1,10 @@
 use crate::families;
 use crate::store::Name;
-use crate::text::{ascii_letters, is_name_label, normalize};
+use crate::text::{ascii_letters, keeps_form, normalize};
 use rphonetic::DoubleMetaphone;
 use std::collections::{BTreeMap, BTreeSet};
+use unicode_normalization::char::is_combining_mark;
+use unicode_normalization::UnicodeNormalization;
 
 pub const MIN_ERA_SAMPLE: u64 = 5;
 
@@ -22,6 +24,7 @@ pub struct Graph {
     pub unlabelled: usize,
     pub rejected_labels: usize,
     pub key_of_qid: BTreeMap<String, String>,
+    display_holders: BTreeMap<String, u64>,
     links: BTreeMap<String, BTreeSet<String>>,
     hypocorisms: BTreeSet<String>,
     years: BTreeMap<String, BTreeMap<i32, u64>>,
@@ -43,6 +46,7 @@ impl Graph {
             unlabelled: 0,
             rejected_labels: 0,
             key_of_qid: BTreeMap::new(),
+            display_holders: BTreeMap::new(),
             links: BTreeMap::new(),
             hypocorisms: BTreeSet::new(),
             years: BTreeMap::new(),
@@ -56,7 +60,7 @@ impl Graph {
             self.unlabelled += 1;
             return;
         }
-        if !is_name_label(label) {
+        if !keeps_form(label) {
             self.rejected_labels += 1;
             return;
         }
@@ -82,6 +86,7 @@ impl Graph {
             self.hypocorisms.insert(key.clone());
         }
         let (dm, rhyme) = self.codes(&key);
+        let holders = self.display_holders.entry(key.clone()).or_insert(0);
         let entry = self.names.entry(key).or_insert_with(|| Name {
             display: gn.label.trim().to_string(),
             langs: Vec::new(),
@@ -94,6 +99,10 @@ impl Graph {
             short_of: Vec::new(),
         });
         entry.count += gn.count;
+        if label != entry.display && outranks(label, gn.count, &entry.display, *holders) {
+            entry.display = label.to_string();
+        }
+        *holders = (*holders).max(gn.count);
         for l in langs {
             if !entry.langs.iter().any(|x| x == l) {
                 entry.langs.push(l.to_string());
@@ -107,9 +116,26 @@ impl Graph {
         entry.langs.sort_by_key(|q| crate::store::qid_order(q));
         entry.families.sort();
     }
+}
 
+// When several given-name items share a key, the display is the label with
+// the most holders; ties go to fewer accents, then alphabetical order.
+fn outranks(label: &str, count: u64, current: &str, current_count: u64) -> bool {
+    let marks = |s: &str| s.nfkd().filter(|c| is_combining_mark(*c)).count();
+    (
+        count,
+        std::cmp::Reverse(marks(label)),
+        std::cmp::Reverse(label),
+    ) > (
+        current_count,
+        std::cmp::Reverse(marks(current)),
+        std::cmp::Reverse(current),
+    )
+}
+
+impl Graph {
     pub fn ensure_form(&mut self, display: &str) {
-        if !is_name_label(display.trim()) {
+        if !keeps_form(display) {
             return;
         }
         let key = normalize(display);
@@ -368,6 +394,51 @@ mod tests {
         g.ensure_form("Bob (comics)");
         assert_eq!(g.rejected_labels, 2);
         assert_eq!(g.names.keys().collect::<Vec<_>>(), vec!["nastya"]);
+    }
+
+    #[test]
+    fn merged_items_show_the_label_with_the_most_holders() {
+        for order in [["Óscar", "Oscar"], ["Oscar", "Óscar"]] {
+            let mut g = Graph::new();
+            for label in order {
+                let count = if label == "Oscar" { 40000 } else { 3000 };
+                g.add_given_name(&gn(&format!("Q{label}"), label, &["Q1860"], count));
+            }
+            assert_eq!(g.names["oscar"].display, "Oscar", "{order:?}");
+            assert_eq!(g.names["oscar"].count, 43000);
+        }
+    }
+
+    #[test]
+    fn merge_ties_go_to_fewer_accents_then_alphabetical() {
+        let mut g = Graph::new();
+        g.add_given_name(&gn("Q1", "Róbert", &["Q9058"], 100));
+        g.add_given_name(&gn("Q2", "Robert", &["Q1860"], 100));
+        assert_eq!(g.names["robert"].display, "Robert");
+        assert_eq!(g.names["robert"].langs, ["Q1860", "Q9058"]);
+        let mut g = Graph::new();
+        g.add_given_name(&gn("Q3", "Hanna", &[], 50));
+        g.add_given_name(&gn("Q4", "Hanná", &[], 50));
+        g.add_given_name(&gn("Q5", "HANNA", &[], 50));
+        assert_eq!(g.names["hanna"].display, "HANNA");
+        let mut g = Graph::new();
+        g.add_given_name(&gn("Q6", "Péter", &[], 90));
+        g.add_given_name(&gn("Q7", "Peter", &[], 80));
+        assert_eq!(g.names["peter"].display, "Péter");
+    }
+
+    #[test]
+    fn multi_word_labels_never_enter_the_graph_by_any_door() {
+        let mut g = Graph::new();
+        g.add_given_name(&gn("Q1", "máximo merilio", &["Q1321"], 3));
+        g.add_given_name(&gn("Q2", "Mary Ann", &["Q1860"], 900));
+        g.add_given_name(&gn("Q3", "Máximo", &["Q1321"], 3000));
+        assert_eq!(g.rejected_labels, 2);
+        g.ensure_form("máximo merilio");
+        g.ensure_form("S.");
+        let keys: Vec<&String> = g.names.keys().collect();
+        assert_eq!(keys, ["maximo"]);
+        assert!(!g.key_of_qid.contains_key("Q1"));
     }
 
     #[test]
