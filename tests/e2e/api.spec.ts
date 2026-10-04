@@ -20,7 +20,7 @@ function playableDate(): string {
 const date = playableDate();
 const n = puzzleNumber(date) ?? 0;
 const misses = ["pierre", "maria", "john", "carlos", "anna", "nicolas", "giovanni", "helen"];
-const ERA = /^(same era|an older name|a newer name|era unknown)$/;
+const ERA = /^(same generation|an earlier generation|a later generation|era unknown)$/;
 const ROOT =
   /^(a form of the same name|your guess is a short form of the answer|the answer is a short form of your guess)$/;
 
@@ -123,7 +123,7 @@ test("a lost game grades every miss, drips facts, and counts once per client", a
     if (i + 1 >= 4) expect(kinds).toContain("citizenship");
     if (i + 1 >= 6) expect(kinds).toContain("field");
     if (i + 1 < 5) expect(body.hint).toBeUndefined();
-    else expect(body.hint).toMatch(/^the answer is used in /);
+    else expect(body.hint).toMatch(/^the answer is common in /);
     token = body.token;
     last = body;
   }

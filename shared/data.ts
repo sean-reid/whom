@@ -29,6 +29,10 @@ export interface NameRecord {
   dm: string;
   rhyme: string;
   era?: number | null;
+  // UN geoscheme subregion slug of the plurality of holders, and the share they make up.
+  region?: string | null;
+  continent?: string | null;
+  regionShare?: number;
   sameAs?: string[];
   shortOf?: string[];
 }
@@ -36,5 +40,6 @@ export interface NameRecord {
 export interface NamesFile {
   version: 1;
   languages: Record<string, string>;
+  regions?: Record<string, string>;
   names: Record<string, NameRecord>;
 }
