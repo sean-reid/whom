@@ -16,6 +16,7 @@ export interface Game {
   won: boolean;
   reveal?: Reveal;
   recorded?: boolean;
+  names?: string;
 }
 
 export interface Stats {

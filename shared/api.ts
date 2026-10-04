@@ -11,6 +11,8 @@ export interface PuzzleResponse {
   n: number;
   token: string;
   guessesLeft: number;
+  // Version of the name list; the client fetches /api/names?v=<names> so a rebuilt list is picked up at once.
+  names: string;
 }
 
 export interface Phrase {

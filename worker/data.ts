@@ -17,16 +17,21 @@ export interface Loaded {
   byQid: Map<string, Person>;
   order: Person[];
   displays: string[];
+  namesVersion: string;
   loadedAt: number;
 }
 
 const TTL_MS = 3_600_000;
 let cached: { promise: Promise<Loaded>; at: number } | null = null;
 
-async function readJson<T>(bucket: DataEnv["FILES"], key: string): Promise<T> {
+async function readJson<T>(
+  bucket: DataEnv["FILES"],
+  key: string,
+): Promise<{ value: T; etag: string }> {
   const obj = await bucket.get(key);
   if (!obj) throw new Error(`${key} is missing from R2`);
-  return (await obj.json()) as T;
+  const etag = (obj as { etag?: string }).etag ?? String(Date.now());
+  return { value: (await obj.json()) as T, etag: etag.replace(/"/g, "") };
 }
 
 // Suggestions come out in this order, so the names most people carry surface first.
@@ -40,13 +45,14 @@ export function displaysByPopularity(
 }
 
 async function load(env: DataEnv): Promise<Loaded> {
-  const [pool, names] = await Promise.all([
+  const [{ value: pool }, { value: names, etag: namesVersion }] = await Promise.all([
     readJson<PoolFile>(env.FILES, "pool.json"),
     readJson<NamesFile>(env.FILES, "names.json"),
   ]);
   return {
     pool,
     names,
+    namesVersion,
     byQid: new Map(pool.people.map((p) => [p.qid, p])),
     order: await scheduleOrder(pool.people, env.PUZZLE_SEED),
     displays: displaysByPopularity(names.names),

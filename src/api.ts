@@ -34,6 +34,7 @@ export const getPuzzle = (date: string): Promise<PuzzleResponse> =>
 export const postGuess = (token: string, name: string): Promise<GuessResponse> =>
   call("/api/guess", { method: "POST", body: JSON.stringify({ token, name }) });
 
-export const getNames = (): Promise<NamesResponse> => call("/api/names");
+export const getNames = (version: string): Promise<NamesResponse> =>
+  call(`/api/names?v=${encodeURIComponent(version)}`);
 
 export const getStats = (n: number): Promise<StatsResponse> => call(`/api/stats/${n}`);
