@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/sean-reid/whom/compare/whom-v0.1.0...whom-v0.2.0) (2026-10-04)
+
+
+### Features
+
+* suggest the most carried names first ([#38](https://github.com/sean-reid/whom/issues/38)) ([41ece3c](https://github.com/sean-reid/whom/commit/41ece3cf15fd46474fd1d580b86f9b737eb0494c))
+
+
+### Bug Fixes
+
+* fetch the name list under its version so a rebuilt list shows at once ([#39](https://github.com/sean-reid/whom/issues/39)) ([a6f71f7](https://github.com/sean-reid/whom/commit/a6f71f76f257236995f4cc8099ba906dd7dcd74e))
+* **pipeline:** capitalise lowercase Wikidata name labels ([#42](https://github.com/sean-reid/whom/issues/42)) ([aeabe75](https://github.com/sean-reid/whom/commit/aeabe750ad00e0c6f68c6cc6255e3bff965447ac))
+* **pipeline:** keep cased displays for pool-only names and rank merged names by holders ([#41](https://github.com/sean-reid/whom/issues/41)) ([4952d4a](https://github.com/sean-reid/whom/commit/4952d4a421bfbcbf42fe8620f9d25a91a5384508))
+* **pipeline:** keep name forms to one word and revalidate stored ones on load ([#37](https://github.com/sean-reid/whom/issues/37)) ([733fbc3](https://github.com/sean-reid/whom/commit/733fbc32d0f3839f72019ed37f57f5abd50affc5))
+* **pipeline:** POST QLever queries, pace them at 3 s, and back off longer on 429 ([#34](https://github.com/sean-reid/whom/issues/34)) ([07d9b14](https://github.com/sean-reid/whom/commit/07d9b143b263d7705d6f37fc8daa0538bb9a37f9))
+
 ## 0.1.0 (2026-10-03)
 
 
