@@ -211,14 +211,16 @@ test("the crop is a jpeg for live numbers and 404 otherwise", async ({ request }
   expect((await request.get("/api/crop/abc")).status()).toBe(404);
 });
 
-test("names lists every display form in order", async ({ request }) => {
+test("names lists every display form, most common first", async ({ request }) => {
   const res = await request.get("/api/names");
   expect(res.status()).toBe(200);
   expect(res.headers()["cache-control"]).toBe("public, max-age=86400");
-  const { names } = (await res.json()) as { names: string[] };
-  expect(names).toContain("Antonín");
-  expect(names).toContain("Alan");
-  expect(names).toEqual([...names].sort(new Intl.Collator("en").compare));
+  const { names: list } = (await res.json()) as { names: string[] };
+  expect(list).toContain("Antonín");
+  expect(list).toContain("Alan");
+  const records = (names as NamesFile).names;
+  const counts = list.map((d) => Object.values(records).find((r) => r.display === d)?.count ?? 0);
+  expect(counts).toEqual([...counts].sort((a, b) => b - a));
 });
 
 // wrangler dev enforces the ratelimits binding with a 60 second window, so this test runs last.
