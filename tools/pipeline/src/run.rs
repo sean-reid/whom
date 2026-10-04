@@ -86,7 +86,7 @@ impl Report {
             unmapped.len(),
             unmapped
                 .iter()
-                .take(10)
+                .take(20)
                 .map(|(c, n)| format!("{c} {n}"))
                 .collect::<Vec<_>>()
                 .join(", ")
