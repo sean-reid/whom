@@ -1,8 +1,8 @@
 # WHOM?
 
-A daily game at [whom.dwainosaur.com](https://whom.dwainosaur.com). One famous face, eight guesses at the first name. Every wrong guess grades your name against the answer on length, first letter, language, sound, how common it is, and when it was in fashion, says when the two are forms of one name or one is short for the other, and every second guess reveals a fact about the person.
+A daily game at [whom.dwainosaur.com](https://whom.dwainosaur.com). One famous face, eight guesses at the first name. Every wrong guess grades your name against the answer on length, first letter, region, sound, how common it is, and when it was in fashion, says when the two are forms of one name or one is short for the other, and every second guess reveals a fact about the person.
 
-Faces and facts come from Wikidata and Wikimedia Commons: people born since 1900 with forty or more Wikimedia sitelinks and a freely licensed portrait. Names are compared through the languages Wikidata lists for each given name, Double Metaphone codes, how many Wikidata people share the name, the median birth year of those people, and which names Wikidata links as the same or as short forms.
+Faces and facts come from Wikidata and Wikimedia Commons: people born since 1900 with forty or more Wikimedia sitelinks and a freely licensed portrait. Names are compared through the part of the world most of the people who carry each given name come from, Double Metaphone codes, how many Wikidata people share the name, the median birth year of those people, and which names Wikidata links as the same or as short forms.
 
 ## Development
 
