@@ -61,6 +61,8 @@ pub struct Person {
         skip_serializing_if = "BTreeMap::is_empty"
     )]
     pub form_displays: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nicknames: Vec<String>,
     pub born: i32,
     pub citizenship: Vec<String>,
     pub occupations: Vec<String>,
@@ -81,6 +83,7 @@ impl Person {
             display: String::new(),
             names: vec![],
             form_displays: BTreeMap::new(),
+            nicknames: vec![],
             born: 0,
             citizenship: vec![],
             occupations: vec![],
@@ -303,6 +306,7 @@ mod tests {
             display: "A".into(),
             names: vec!["a".into()],
             form_displays: BTreeMap::new(),
+            nicknames: vec![],
             born: 1950,
             citizenship: vec![],
             occupations: vec![],
@@ -321,6 +325,7 @@ mod tests {
         let text = serde_json::to_string(&p).unwrap();
         assert!(!text.contains("retired"));
         assert!(!text.contains("formDisplays"));
+        assert!(!text.contains("nicknames"));
         let mut cased = p.clone();
         cased.form_displays.insert("a".into(), "Á".into());
         assert!(serde_json::to_string(&cased)

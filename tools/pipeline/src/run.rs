@@ -359,47 +359,47 @@ fn fetch_and_crop(
     Ok(())
 }
 
-pub fn display_name(c: &Candidate) -> String {
-    let token = first_token(&c.label).unwrap_or("");
-    let wanted = normalize(token);
-    c.givens
-        .iter()
-        .filter(|(_, l)| keeps_form(l))
-        .find(|(_, l)| normalize(l) == wanted)
-        .or_else(|| c.givens.iter().find(|(_, l)| keeps_form(l)))
-        .map(|(_, l)| l.trim().to_string())
-        .unwrap_or_else(|| token.to_string())
+// The given name whose label matches the label's first token, else the first
+// given name; the token itself for a mononym.
+fn display_given(c: &Candidate) -> Option<&str> {
+    let wanted = normalize(first_token(&c.label).unwrap_or(""));
+    let valid = || {
+        c.givens
+            .iter()
+            .map(|(_, l)| l.trim())
+            .filter(|l| keeps_form(l))
+    };
+    valid()
+        .find(|l| normalize(l) == wanted)
+        .or_else(|| valid().next())
 }
 
-// The label's first token stands in for a given name only for mononyms; for
-// everyone else it is a title or a stage name, not an answer.
+pub fn display_name(c: &Candidate) -> String {
+    display_given(c)
+        .or_else(|| first_token(&c.label))
+        .unwrap_or("")
+        .to_string()
+}
+
+pub fn nickname_forms(c: &Candidate) -> impl Iterator<Item = &str> {
+    c.nicknames
+        .iter()
+        .map(|n| n.trim())
+        .filter(|n| keeps_form(n))
+}
+
+// A win needs the name the person goes by: the display given name, a one-word
+// nickname, or the label token of a mononym. Other given names are not answers.
 pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
     let mut forms: Vec<(String, String)> = Vec::new();
-    let givens: Vec<&str> = c
-        .givens
-        .iter()
-        .map(|(_, l)| l.trim())
-        .filter(|l| keeps_form(l))
-        .collect();
-    let label_token = if givens.is_empty() {
-        first_token(&c.label).filter(|t| keeps_form(t))
-    } else {
-        None
-    };
-    let sources = givens
-        .iter()
-        .copied()
-        .chain(
-            c.nicknames
-                .iter()
-                .map(|n| n.trim())
-                .filter(|n| keeps_form(n)),
-        )
-        .chain(label_token);
+    let sources = display_given(c)
+        .or_else(|| first_token(&c.label).filter(|t| keeps_form(t)))
+        .into_iter()
+        .chain(nickname_forms(c));
     for s in sources {
         let n = normalize(s);
         if !forms.iter().any(|(k, _)| *k == n) {
-            forms.push((n, s.trim().to_string()));
+            forms.push((n, s.to_string()));
         }
     }
     forms.sort();
@@ -440,11 +440,11 @@ impl Person {
         }
     }
 
+    // Without a nickname mark a stored form could be a second given name, so only
+    // the display form and marked nicknames survive; a full scan restores the rest.
     pub fn revalidate(&mut self) -> usize {
         let before = self.names.len();
         self.names.retain(|n| keeps_form(n));
-        let names = &self.names;
-        self.form_displays.retain(|k, _| names.contains(k));
         if !self.names.contains(&normalize(&self.display)) {
             let token = first_token(&self.label).unwrap_or("");
             self.display = if self.names.is_empty() || self.names.contains(&normalize(token)) {
@@ -453,6 +453,13 @@ impl Person {
                 capitalize(&self.names[0])
             };
         }
+        let display = normalize(&self.display);
+        let nicknames = &self.nicknames;
+        self.names
+            .retain(|n| *n == display || nicknames.contains(n));
+        let names = &self.names;
+        self.form_displays.retain(|k, _| names.contains(k));
+        self.nicknames.retain(|k| names.contains(k));
         before - self.names.len()
     }
 
@@ -462,6 +469,9 @@ impl Person {
         let forms = name_forms(c);
         self.names = forms.iter().map(|(k, _)| k.clone()).collect();
         self.form_displays = forms.into_iter().collect();
+        self.nicknames = nickname_forms(c).map(normalize).collect();
+        self.nicknames.sort();
+        self.nicknames.dedup();
         self.born = c.born;
         self.citizenship = c.citizenship.clone();
         self.occupations = c.occupations.clone();
@@ -485,6 +495,7 @@ fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
         display: String::new(),
         names: Vec::new(),
         form_displays: BTreeMap::new(),
+        nicknames: Vec::new(),
         born: 0,
         citizenship: Vec::new(),
         occupations: Vec::new(),
@@ -650,7 +661,7 @@ mod tests {
 
     #[test]
     fn name_forms_are_sorted_unique_normalized() {
-        assert_eq!(name_keys(&candidate()), vec!["alan", "mathison", "prof"]);
+        assert_eq!(name_keys(&candidate()), vec!["alan", "prof"]);
     }
 
     #[test]
@@ -673,7 +684,7 @@ mod tests {
         }
         let mut c = candidate();
         c.nicknames = vec!["Pelé".into(), "a pequena notavel".into(), "Big Al".into()];
-        assert_eq!(name_keys(&c), vec!["alan", "mathison", "pele"]);
+        assert_eq!(name_keys(&c), vec!["alan", "pele"]);
     }
 
     #[test]
@@ -704,7 +715,7 @@ mod tests {
         let mut c = candidate();
         c.givens.insert(0, ("Q1".into(), ".".into()));
         c.nicknames = vec!["The Prof (1950s)".into()];
-        assert_eq!(name_keys(&c), vec!["alan", "mathison"]);
+        assert_eq!(name_keys(&c), vec!["alan"]);
         c.label = "Turing".into();
         assert_eq!(display_name(&c), "Mathison");
     }
@@ -806,14 +817,63 @@ mod tests {
     }
 
     #[test]
+    fn only_the_name_the_person_goes_by_wins() {
+        let mut c = candidate();
+        c.label = "Benjamin Britten".into();
+        c.givens = vec![
+            ("Q4854186".into(), "Edward".into()),
+            ("Q18002399".into(), "Benjamin".into()),
+        ];
+        c.nicknames.clear();
+        assert_eq!(name_keys(&c), vec!["benjamin"]);
+        assert_eq!(display_name(&c), "Benjamin");
+        c.label = "Bill Clinton".into();
+        c.givens = vec![
+            ("Q12344159".into(), "William".into()),
+            ("Q1158570".into(), "Jefferson".into()),
+        ];
+        c.nicknames = vec!["Bill".into(), "Slick Willie".into()];
+        assert_eq!(name_keys(&c), vec!["bill", "william"]);
+        assert_eq!(display_name(&c), "William");
+        let mut p = Person::stub("Q1124");
+        p.update_from(&c);
+        assert_eq!(p.nicknames, ["bill"]);
+        assert_eq!(p.form_displays["bill"], "Bill");
+    }
+
+    #[test]
+    fn stored_people_keep_the_display_form_and_marked_nicknames() {
+        let mut p = stored("Benjamin Britten", "Benjamin", &["benjamin", "edward"]);
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.names, ["benjamin"]);
+        assert_eq!(p.display, "Benjamin");
+        let mut p = stored("Pelé", "Pelé", &["pele"]);
+        assert_eq!(p.revalidate(), 0);
+        assert_eq!(p.names, ["pele"]);
+        let mut p = stored("Bill Clinton", "William", &["bill", "jefferson", "william"]);
+        p.form_displays.insert("bill".into(), "Bill".into());
+        assert_eq!(p.revalidate(), 2);
+        assert_eq!(p.names, ["william"]);
+        assert!(p.form_displays.is_empty());
+        let mut p = stored("Bill Clinton", "William", &["bill", "jefferson", "william"]);
+        p.form_displays.insert("bill".into(), "Bill".into());
+        p.nicknames = vec!["bill".into(), "slick willie".into()];
+        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.names, ["bill", "william"]);
+        assert_eq!(p.nicknames, ["bill"]);
+        assert_eq!(p.form_displays["bill"], "Bill");
+    }
+
+    #[test]
     fn display_is_rebuilt_only_when_its_form_was_dropped() {
         let mut p = stored("Lady Gaga", "Lady Gaga", &["lady gaga", "stefani"]);
         assert_eq!(p.revalidate(), 1);
         assert_eq!(p.names, ["stefani"]);
         assert_eq!(p.display, "Stefani");
         let mut p = stored("Alan Turing", "Mathison", &["alan", "mathison", "a."]);
-        assert_eq!(p.revalidate(), 1);
+        assert_eq!(p.revalidate(), 2);
         assert_eq!(p.display, "Mathison");
+        assert_eq!(p.names, ["mathison"]);
         let mut p = stored("Alan Turing", "Tony Shalhoub", &["alan", "tony shalhoub"]);
         assert_eq!(p.revalidate(), 1);
         assert_eq!(p.display, "Alan");
@@ -823,12 +883,12 @@ mod tests {
     fn update_from_keeps_the_cased_text_of_every_form() {
         let mut p = Person::stub("Q7251");
         p.update_from(&candidate());
-        assert_eq!(p.names, ["alan", "mathison", "prof"]);
+        assert_eq!(p.names, ["alan", "prof"]);
+        assert_eq!(p.nicknames, ["prof"]);
         assert_eq!(
             p.form_displays,
             BTreeMap::from([
                 ("alan".to_string(), "Alan".to_string()),
-                ("mathison".to_string(), "Mathison".to_string()),
                 ("prof".to_string(), "Prof".to_string()),
             ])
         );
