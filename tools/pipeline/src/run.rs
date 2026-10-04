@@ -422,11 +422,31 @@ pub fn name_keys(c: &Candidate) -> Vec<String> {
 fn load_pool(out: &Path, today: &str) -> Result<(Pool, usize)> {
     let mut pool: Pool =
         store::read_json(&out.join("pool.json"))?.unwrap_or_else(|| Pool::empty(today));
-    let dropped = pool.people.iter_mut().map(Person::revalidate).sum();
+    let dropped = pool
+        .people
+        .iter_mut()
+        .map(|p| {
+            let dropped = p.revalidate();
+            p.derive_form_displays();
+            dropped
+        })
+        .sum();
     Ok((pool, dropped))
 }
 
 impl Person {
+    // A record written before formDisplays existed still carries two cased
+    // strings, the display and the label; nickname forms have no source left.
+    pub fn derive_form_displays(&mut self) {
+        let token = first_token(&self.label).unwrap_or("").to_string();
+        for cased in [self.display.clone(), token] {
+            let key = normalize(&cased);
+            if !cased.is_empty() && self.names.contains(&key) {
+                self.form_displays.entry(key).or_insert(cased);
+            }
+        }
+    }
+
     pub fn revalidate(&mut self) -> usize {
         let before = self.names.len();
         self.names.retain(|n| keeps_form(n));
@@ -751,6 +771,45 @@ mod tests {
         assert_eq!(loaded.people[1].display, "Pelé");
         let (empty, dropped) = load_pool(&dir, "2026-02-01").unwrap();
         assert_eq!((empty.people.len(), dropped), (0, 0));
+    }
+
+    #[test]
+    fn a_stored_person_derives_cased_forms_from_display_and_label_on_load() {
+        let mut p = stored("Antonín Novotný", "Tonda", &["antonin", "franta", "tonda"]);
+        p.derive_form_displays();
+        assert_eq!(
+            p.form_displays,
+            BTreeMap::from([
+                ("antonin".to_string(), "Antonín".to_string()),
+                ("tonda".to_string(), "Tonda".to_string()),
+            ])
+        );
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(p);
+        let mut graph = Graph::new();
+        assert_eq!(
+            add_pool_forms(&mut graph, &pool),
+            PoolForms {
+                people_without_forms: 0,
+                title_cased: 1
+            }
+        );
+        assert_eq!(graph.names["antonin"].display, "Antonín");
+        assert_eq!(graph.names["franta"].display, "Franta");
+        let mut p = stored("Pelé", "Pelé", &["pele"]);
+        p.form_displays.insert("pele".into(), "Pelé ".into());
+        p.derive_form_displays();
+        assert_eq!(p.form_displays["pele"], "Pelé ");
+        let dir = std::env::temp_dir().join(format!("whom-cased-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people
+            .push(stored("Antonín Novotný", "Antonín", &["antonin"]));
+        store::write_json(&dir.join("pool.json"), &pool).unwrap();
+        let (loaded, _) = load_pool(&dir, "2026-02-01").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(loaded.people[0].form_displays["antonin"], "Antonín");
     }
 
     #[test]
