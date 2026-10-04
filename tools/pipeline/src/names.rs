@@ -1,4 +1,5 @@
 use crate::families;
+use crate::regions;
 use crate::run::title_case;
 use crate::store::Name;
 use crate::text::{ascii_letters, keeps_form, normalize};
@@ -29,7 +30,15 @@ pub struct Graph {
     links: BTreeMap<String, BTreeSet<String>>,
     hypocorisms: BTreeSet<String>,
     years: BTreeMap<String, BTreeMap<i32, u64>>,
+    citizenships: BTreeMap<String, BTreeMap<&'static str, u64>>,
+    pub unmapped_countries: BTreeMap<String, u64>,
     dm: DoubleMetaphone,
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct RegionStats {
+    pub names_with_region: usize,
+    pub regions: BTreeMap<String, String>,
 }
 
 impl Default for Graph {
@@ -51,6 +60,8 @@ impl Graph {
             links: BTreeMap::new(),
             hypocorisms: BTreeSet::new(),
             years: BTreeMap::new(),
+            citizenships: BTreeMap::new(),
+            unmapped_countries: BTreeMap::new(),
             dm: DoubleMetaphone::new(None),
         }
     }
@@ -98,6 +109,9 @@ impl Graph {
             era: None,
             same_as: Vec::new(),
             short_of: Vec::new(),
+            region: None,
+            continent: None,
+            region_share: None,
         });
         entry.count += gn.count;
         if label != entry.display && outranks(label, gn.count, &entry.display, *holders) {
@@ -165,8 +179,76 @@ impl Graph {
                 era: None,
                 same_as: Vec::new(),
                 short_of: Vec::new(),
+                region: None,
+                continent: None,
+                region_share: None,
             },
         );
+    }
+
+    pub fn add_citizenship(&mut self, qid: &str, country: &str, count: u64) {
+        let Some(key) = self.key_of_qid.get(qid).cloned() else {
+            return;
+        };
+        self.add_citizenship_to_key(&key, regions::region_of_qid(country), country, count);
+    }
+
+    // Pool records name a country, not a qid; the label resolves through the table.
+    pub fn add_citizenship_label(&mut self, key: &str, label: &str) {
+        if self.names.contains_key(key) {
+            self.add_citizenship_to_key(key, regions::region_of_label(label), label, 1);
+        }
+    }
+
+    fn add_citizenship_to_key(
+        &mut self,
+        key: &str,
+        region: Option<&'static str>,
+        country: &str,
+        count: u64,
+    ) {
+        match region {
+            Some(slug) => {
+                *self
+                    .citizenships
+                    .entry(key.to_string())
+                    .or_default()
+                    .entry(slug)
+                    .or_insert(0) += count;
+            }
+            None => {
+                *self
+                    .unmapped_countries
+                    .entry(country.to_string())
+                    .or_insert(0) += count
+            }
+        }
+    }
+
+    // The plurality subregion wins; its share is of holders with a mapped country.
+    pub fn assign_regions(&mut self) -> RegionStats {
+        let mut stats = RegionStats::default();
+        for (key, by_region) in &self.citizenships {
+            let Some(entry) = self.names.get_mut(key) else {
+                continue;
+            };
+            let total: u64 = by_region.values().sum();
+            let Some((slug, top)) = by_region
+                .iter()
+                .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
+            else {
+                continue;
+            };
+            let sub = regions::subregion(slug).expect("table slugs are subregions");
+            entry.region = Some(slug.to_string());
+            entry.continent = Some(sub.continent.to_string());
+            entry.region_share = Some((*top as f64 / total as f64 * 100.0).round() / 100.0);
+            stats
+                .regions
+                .insert(slug.to_string(), sub.label.to_string());
+            stats.names_with_region += 1;
+        }
+        stats
     }
 
     pub fn add_birth_years(&mut self, qid: &str, year: i32, count: u64) {
@@ -449,6 +531,65 @@ mod tests {
         let keys: Vec<&String> = g.names.keys().collect();
         assert_eq!(keys, ["maximo"]);
         assert!(!g.key_of_qid.contains_key("Q1"));
+    }
+
+    #[test]
+    fn region_is_the_plurality_subregion_with_its_share() {
+        let mut g = Graph::new();
+        g.add_given_name(&gn("Q1", "Bill", &["Q1860"], 1200));
+        g.add_given_name(&gn("Q2", "Pierre", &["Q150"], 800));
+        g.add_given_name(&gn("Q3", "Nowhere", &[], 5));
+        g.add_citizenship("Q1", "Q30", 620);
+        g.add_citizenship("Q1", "Q145", 300);
+        g.add_citizenship("Q1", "Q16", 50);
+        g.add_citizenship("Q1", "Q99999999", 230);
+        g.add_citizenship("Q2", "Q142", 400);
+        g.add_citizenship("Q2", "Q16", 400);
+        g.add_citizenship("Q3", "Q99999999", 5);
+        g.add_citizenship("Q404", "Q30", 9);
+        let stats = g.assign_regions();
+        assert_eq!(stats.names_with_region, 2);
+        assert_eq!(
+            stats.regions,
+            BTreeMap::from([(
+                "northern-america".to_string(),
+                "Northern America".to_string()
+            ),])
+        );
+        let bill = &g.names["bill"];
+        assert_eq!(bill.region.as_deref(), Some("northern-america"));
+        assert_eq!(bill.continent.as_deref(), Some("americas"));
+        assert_eq!(bill.region_share, Some(0.69));
+        let pierre = &g.names["pierre"];
+        assert_eq!(pierre.region.as_deref(), Some("northern-america"));
+        assert_eq!(pierre.region_share, Some(0.5));
+        assert_eq!(g.names["nowhere"].region, None);
+        assert_eq!(g.names["nowhere"].region_share, None);
+        assert_eq!(
+            g.unmapped_countries,
+            BTreeMap::from([("Q99999999".to_string(), 235)])
+        );
+    }
+
+    #[test]
+    fn a_pool_only_name_takes_its_people_s_citizenship_labels() {
+        let mut g = Graph::new();
+        g.ensure_form("Hifikepunye");
+        g.add_citizenship_label("hifikepunye", "Namibia");
+        g.add_citizenship_label("hifikepunye", "Namibia");
+        g.add_citizenship_label("hifikepunye", "Angola");
+        g.add_citizenship_label("hifikepunye", "Wakanda");
+        g.add_citizenship_label("nobody", "Namibia");
+        let stats = g.assign_regions();
+        assert_eq!(stats.names_with_region, 1);
+        let n = &g.names["hifikepunye"];
+        assert_eq!(n.region.as_deref(), Some("southern-africa"));
+        assert_eq!(n.continent.as_deref(), Some("africa"));
+        assert_eq!(n.region_share, Some(0.67));
+        assert_eq!(
+            g.unmapped_countries,
+            BTreeMap::from([("Wakanda".to_string(), 1)])
+        );
     }
 
     #[test]

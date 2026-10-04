@@ -184,6 +184,18 @@ GROUP BY ?gn ?y"#,
     )
 }
 
+fn citizenships_query(qids: &[&str]) -> String {
+    let values: Vec<String> = qids.iter().map(|q| format!("wd:{q}")).collect();
+    format!(
+        r#"SELECT ?gn ?c (COUNT(?h) AS ?n) WHERE {{
+  VALUES ?gn {{ {} }}
+  ?h wdt:P735 ?gn ; wdt:P27 ?c .
+}}
+GROUP BY ?gn ?c"#,
+        values.join(" ")
+    )
+}
+
 fn labels_query(qids: &[&str]) -> String {
     let values: Vec<String> = qids.iter().map(|q| format!("wd:{q}")).collect();
     format!(
@@ -307,6 +319,33 @@ pub fn birth_years(client: &mut Client, qids: &[String]) -> Result<Vec<BirthYear
     Ok(out)
 }
 
+pub struct CitizenshipRow {
+    pub qid: String,
+    pub country: String,
+    pub count: u64,
+}
+
+pub fn citizenships(client: &mut Client, qids: &[String]) -> Result<Vec<CitizenshipRow>> {
+    let mut out = Vec::new();
+    for chunk in qids.chunks(YEARS_BATCH) {
+        let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
+        for row in query(client, ENDPOINT, &citizenships_query(&refs))? {
+            let (Some(gn), Some(c), Some(n)) = (row.get("gn"), row.get("c"), row.get("n")) else {
+                continue;
+            };
+            let Ok(count) = n.parse() else {
+                continue;
+            };
+            out.push(CitizenshipRow {
+                qid: qid_of(gn).to_string(),
+                country: qid_of(c).to_string(),
+                count,
+            });
+        }
+    }
+    Ok(out)
+}
+
 pub fn common_given_names(client: &mut Client) -> Result<Vec<GivenName>> {
     let mut out = Vec::new();
     paged(client, ENDPOINT, &common_given_names_query(), |rows| {
@@ -415,6 +454,14 @@ mod tests {
         let g = given_name_from_row(&r).unwrap();
         assert!(g.same_as.is_empty());
         assert!(!g.hypocorism);
+    }
+
+    #[test]
+    fn citizenship_query_batches_qids_into_values_over_p27() {
+        let q = citizenships_query(&["Q4723915", "Q18001787"]);
+        assert!(q.contains("VALUES ?gn { wd:Q4723915 wd:Q18001787 }"), "{q}");
+        assert!(q.contains("wdt:P735 ?gn ; wdt:P27 ?c"), "{q}");
+        assert!(q.ends_with("GROUP BY ?gn ?c"), "{q}");
     }
 
     #[test]

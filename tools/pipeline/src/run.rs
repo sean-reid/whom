@@ -29,6 +29,8 @@ struct Report {
     forms_dropped: usize,
     people_without_forms: usize,
     title_cased_forms: usize,
+    names_with_region: usize,
+    unmapped_countries: BTreeMap<String, u64>,
     skipped: BTreeMap<&'static str, usize>,
 }
 
@@ -75,6 +77,19 @@ impl Report {
         println!(
             "given-name labels failing the name rule: {}",
             graph.rejected_labels
+        );
+        println!("names with a region: {}", self.names_with_region);
+        let mut unmapped: Vec<(&String, &u64)> = self.unmapped_countries.iter().collect();
+        unmapped.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        println!(
+            "countries without a subregion: {} [{}]",
+            unmapped.len(),
+            unmapped
+                .iter()
+                .take(10)
+                .map(|(c, n)| format!("{c} {n}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         println!("languages seen: {}", graph.langs_seen.len());
         println!(
@@ -245,6 +260,9 @@ pub fn run(args: &Args) -> Result<()> {
     let added = add_pool_forms(&mut graph, &pool);
     report.people_without_forms = added.people_without_forms;
     report.title_cased_forms = added.title_cased;
+    let regions = graph.assign_regions();
+    report.names_with_region = regions.names_with_region;
+    report.unmapped_countries = std::mem::take(&mut graph.unmapped_countries);
     let languages = qlever::labels(
         &mut client,
         &graph.langs_seen.iter().cloned().collect::<Vec<_>>(),
@@ -252,6 +270,7 @@ pub fn run(args: &Args) -> Result<()> {
     let names = Names {
         version: 1,
         languages,
+        regions: regions.regions,
         names: std::mem::take(&mut graph.names),
     };
     store::write_json(&args.out.join("names.json"), &names)?;
@@ -536,6 +555,9 @@ fn build_graph(client: &mut Client, candidates: &[Candidate]) -> Result<Graph> {
     for row in qlever::birth_years(client, &qids)? {
         graph.add_birth_years(&row.qid, row.year, row.count);
     }
+    for row in qlever::citizenships(client, &qids)? {
+        graph.add_citizenship(&row.qid, &row.country, row.count);
+    }
     graph.link();
     for c in candidates {
         for (_, display) in name_forms(c) {
@@ -572,6 +594,9 @@ fn add_pool_forms(graph: &mut Graph, pool: &Pool) -> PoolForms {
                 }
             };
             graph.ensure_form(&cased);
+            for country in &p.citizenship {
+                graph.add_citizenship_label(n, country);
+            }
         }
         if !any {
             out.people_without_forms += 1;
@@ -935,6 +960,31 @@ mod tests {
         assert_eq!(keys, ["alan"]);
         assert_eq!(graph.names["alan"].display, "Alan");
         assert!(!pool.people[1].retired);
+    }
+
+    #[test]
+    fn a_pool_only_person_gives_their_form_a_region_by_label() {
+        let mut c = candidate();
+        c.qid = "Q57621".into();
+        c.label = "Hifikepunye Pohamba".into();
+        c.givens.clear();
+        c.nicknames.clear();
+        c.citizenship = vec!["Namibia".into(), "South West Africa".into()];
+        let mut p = Person::stub(&c.qid);
+        p.update_from(&c);
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(p);
+        let mut graph = Graph::new();
+        add_pool_forms(&mut graph, &pool);
+        let stats = graph.assign_regions();
+        assert_eq!(stats.names_with_region, 1);
+        assert_eq!(stats.regions["southern-africa"], "Southern Africa");
+        assert_eq!(
+            graph.names["hifikepunye"].region.as_deref(),
+            Some("southern-africa")
+        );
+        assert_eq!(graph.names["hifikepunye"].region_share, Some(1.0));
+        assert_eq!(graph.unmapped_countries["South West Africa"], 1);
     }
 
     #[test]
