@@ -27,6 +27,7 @@ struct Report {
     to_fetch: usize,
     fetched: usize,
     forms_dropped: usize,
+    people_without_forms: usize,
     skipped: BTreeMap<&'static str, usize>,
 }
 
@@ -41,6 +42,10 @@ impl Report {
         println!("people needing a fetch: {}", self.to_fetch);
         println!("people added: {}", self.fetched);
         println!("stale name forms dropped: {}", self.forms_dropped);
+        println!(
+            "people with no valid form, left out of the graph: {}",
+            self.people_without_forms
+        );
         println!(
             "pool size: {} ({} retired)",
             pool.people.len(),
@@ -231,7 +236,8 @@ pub fn run(args: &Args) -> Result<()> {
         bail!("run stopped: {e}");
     }
 
-    let mut graph = build_graph(&mut client, &candidates, &pool)?;
+    let mut graph = build_graph(&mut client, &candidates)?;
+    report.people_without_forms = add_pool_forms(&mut graph, &pool);
     let languages = qlever::labels(
         &mut client,
         &graph.langs_seen.iter().cloned().collect::<Vec<_>>(),
@@ -473,7 +479,7 @@ fn person_from(c: &Candidate, licence: &commons::Licence) -> Person {
     p
 }
 
-fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Result<Graph> {
+fn build_graph(client: &mut Client, candidates: &[Candidate]) -> Result<Graph> {
     let mut graph = Graph::new();
     let common = qlever::common_given_names(client)?;
     println!("given names with 50 or more holders: {}", common.len());
@@ -500,12 +506,24 @@ fn build_graph(client: &mut Client, candidates: &[Candidate], pool: &Pool) -> Re
             graph.ensure_form(&display);
         }
     }
+    Ok(graph)
+}
+
+// Stored forms pass the rule again here, so a pool written by another binary
+// cannot reach names.json; returns how many people had no form to offer.
+fn add_pool_forms(graph: &mut Graph, pool: &Pool) -> usize {
+    let mut without = 0;
     for p in &pool.people {
-        for n in &p.names {
+        let mut any = false;
+        for n in p.names.iter().filter(|n| keeps_form(n)) {
             graph.ensure_form(n);
+            any = true;
+        }
+        if !any {
+            without += 1;
         }
     }
-    Ok(graph)
+    without
 }
 
 // pool.json is around 5 MB at full size, state.json a tenth of that.
@@ -719,6 +737,24 @@ mod tests {
         assert!(p.names.is_empty());
         assert_eq!(p.display, "Tony");
         assert!(!p.retired);
+    }
+
+    #[test]
+    fn graph_takes_only_valid_stored_forms_and_counts_people_without_one() {
+        let mut pool = Pool::empty("2026-01-01");
+        pool.people.push(stored(
+            "Alan Turing",
+            "Alan",
+            &["alan", "tony shalhoub", "s."],
+        ));
+        pool.people.push(stored("Tony Shalhoub", "Tony", &[]));
+        pool.people
+            .push(stored("Carmen Miranda", "Carmen", &["a pequena notavel"]));
+        let mut graph = Graph::new();
+        assert_eq!(add_pool_forms(&mut graph, &pool), 2);
+        let keys: Vec<&String> = graph.names.keys().collect();
+        assert_eq!(keys, ["alan"]);
+        assert!(!pool.people[1].retired);
     }
 
     #[test]
