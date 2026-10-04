@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/sean-reid/whom/compare/whom-v0.2.0...whom-v0.3.0) (2026-10-04)
+
+
+### Features
+
+* **grade:** compare names by region and say every phrase in plain words ([#48](https://github.com/sean-reid/whom/issues/48)) ([f90782b](https://github.com/sean-reid/whom/commit/f90782b1b42bd1d60cb254e5b4750b5370d6e0f8))
+* **pipeline:** give every name a region, continent, and plurality share ([#47](https://github.com/sean-reid/whom/issues/47)) ([0934d57](https://github.com/sean-reid/whom/commit/0934d578e2a67f0a49358fdae955ea9d5b606b21))
+* put the input above the guesses and rank every guess with the last one marked ([#46](https://github.com/sean-reid/whom/issues/46)) ([c9632e9](https://github.com/sean-reid/whom/commit/c9632e9408c78133baad92f7cb4b2af8b58c73cc))
+
+
+### Bug Fixes
+
+* **pipeline:** accept only the name the person goes by ([#44](https://github.com/sean-reid/whom/issues/44)) ([04e0c62](https://github.com/sean-reid/whom/commit/04e0c6230bc55a746dd6dd6345d616115c795bd8)), closes [#43](https://github.com/sean-reid/whom/issues/43)
+* **pipeline:** map the historical states the first region run left out ([#49](https://github.com/sean-reid/whom/issues/49)) ([ed255f0](https://github.com/sean-reid/whom/commit/ed255f0adb50b128947778a8edc4c33768f6b80e))
+
 ## [0.2.0](https://github.com/sean-reid/whom/compare/whom-v0.1.0...whom-v0.2.0) (2026-10-04)
 
 
