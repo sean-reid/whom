@@ -29,20 +29,27 @@ async function readJson<T>(bucket: DataEnv["FILES"], key: string): Promise<T> {
   return (await obj.json()) as T;
 }
 
+// Suggestions come out in this order, so the names most people carry surface first.
+export function displaysByPopularity(
+  names: Record<string, { display: string; count: number }>,
+): string[] {
+  const collate = new Intl.Collator("en").compare;
+  return Object.values(names)
+    .sort((a, b) => b.count - a.count || collate(a.display, b.display))
+    .map((r) => r.display);
+}
+
 async function load(env: DataEnv): Promise<Loaded> {
   const [pool, names] = await Promise.all([
     readJson<PoolFile>(env.FILES, "pool.json"),
     readJson<NamesFile>(env.FILES, "names.json"),
   ]);
-  const collate = new Intl.Collator("en").compare;
   return {
     pool,
     names,
     byQid: new Map(pool.people.map((p) => [p.qid, p])),
     order: await scheduleOrder(pool.people, env.PUZZLE_SEED),
-    displays: Object.values(names.names)
-      .map((r) => r.display)
-      .sort(collate),
+    displays: displaysByPopularity(names.names),
     loadedAt: Date.now(),
   };
 }

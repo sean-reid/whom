@@ -18,7 +18,8 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
   await expect(page.locator("#remaining")).toHaveText("8 guesses left");
 
   await page.fill("#guess", "ala");
-  await expect(page.locator("#suggest li")).toContainText(["Alain", "Alan"]);
+  await expect(page.locator("#suggest li").filter({ hasText: /^Alan$/ })).toHaveCount(1);
+  await expect(page.locator("#suggest li").filter({ hasText: /^Alain$/ })).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(page.locator("#suggest")).toBeHidden();
 
