@@ -32,10 +32,14 @@ export function renderFacts(list: HTMLElement, facts: Fact[], guesses: number, d
   list.hidden = list.childElementCount === 0;
 }
 
-export function renderRows(list: HTMLElement, rows: Row[]) {
+export function renderRows(list: HTMLElement, rows: Row[], current?: Row) {
   list.replaceChildren();
   for (const row of rows) {
     const item = el("li");
+    if (row === current) {
+      item.className = "current";
+      item.setAttribute("aria-current", "true");
+    }
     item.append(el("span", "name", row.name));
     const line = el("span", "line");
     row.phrases.forEach((p, i) => {
@@ -65,13 +69,14 @@ export interface GuessLists {
   latestCaption: HTMLElement;
 }
 
+// The last guess sits under the input; the table ranks every guess and marks that one.
 export function renderGuesses(lists: GuessLists, rows: Row[], done: boolean) {
   const last = rows[rows.length - 1];
-  const earlier = done ? rows : rows.slice(0, -1);
-  renderRows(lists.sorted, orderRows(earlier));
+  const table = done || rows.length >= 2 ? rows : [];
+  renderRows(lists.sorted, orderRows(table), done ? undefined : last);
   renderRows(lists.latest, done || !last ? [] : [last]);
-  lists.sortedCaption.hidden = earlier.length < 1 || done;
-  lists.latestCaption.hidden = done || !last || earlier.length === 0;
+  lists.sortedCaption.hidden = table.length === 0;
+  lists.latestCaption.hidden = done || !last;
 }
 
 export function remainingText(left: number): string {

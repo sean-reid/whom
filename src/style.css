@@ -231,6 +231,11 @@ main,
   animation: settle 300ms ease-out;
 }
 
+.guesses li.current {
+  box-shadow: inset 2px 0 0 var(--ink);
+  padding-left: 0.5rem;
+}
+
 .caption {
   margin: 1rem 0 0;
   font-family: var(--mono);
