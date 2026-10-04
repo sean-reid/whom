@@ -347,19 +347,18 @@ pub fn display_name(c: &Candidate) -> String {
     let wanted = normalize(token);
     c.givens
         .iter()
-        .filter(|(_, l)| is_name_label(l.trim()))
+        .filter(|(_, l)| keeps_form(l))
         .find(|(_, l)| normalize(l) == wanted)
-        .or_else(|| c.givens.iter().find(|(_, l)| is_name_label(l.trim())))
+        .or_else(|| c.givens.iter().find(|(_, l)| keeps_form(l)))
         .map(|(_, l)| l.trim().to_string())
         .unwrap_or_else(|| token.to_string())
 }
 
-const MAX_NICKNAME_WORDS: usize = 2;
-
-// A P1449 nickname counts as a name form only when it is short enough to
-// be one; longer values are sobriquets.
-pub fn is_nickname_form(s: &str) -> bool {
-    is_name_label(s) && s.split_whitespace().count() <= MAX_NICKNAME_WORDS
+// A name form is one word: longer given names and nicknames are full names,
+// sobriquets, or titles, and a stored form has no record of which it was.
+pub fn keeps_form(form: &str) -> bool {
+    let form = form.trim();
+    is_name_label(form) && !form.contains('.') && form.split_whitespace().count() == 1
 }
 
 // The label's first token stands in for a given name only for mononyms; for
@@ -370,10 +369,10 @@ pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
         .givens
         .iter()
         .map(|(_, l)| l.trim())
-        .filter(|l| is_name_label(l))
+        .filter(|l| keeps_form(l))
         .collect();
     let label_token = if givens.is_empty() {
-        first_token(&c.label).filter(|t| is_name_label(t))
+        first_token(&c.label).filter(|t| keeps_form(t))
     } else {
         None
     };
@@ -384,7 +383,7 @@ pub fn name_forms(c: &Candidate) -> Vec<(String, String)> {
             c.nicknames
                 .iter()
                 .map(|n| n.trim())
-                .filter(|n| is_nickname_form(n)),
+                .filter(|n| keeps_form(n)),
         )
         .chain(label_token);
     for s in sources {
@@ -552,15 +551,49 @@ mod tests {
     }
 
     #[test]
-    fn nicknames_are_capped_at_two_words() {
-        assert!(is_nickname_form("Bill"));
-        assert!(is_nickname_form("Pelé"));
-        assert!(is_nickname_form("Fed Express"));
-        assert!(!is_nickname_form("a pequena notavel"));
-        assert!(!is_nickname_form("The Prof (1950s)"));
+    fn a_form_is_one_word_without_a_period() {
+        for s in ["Pelé", "Bill", "Lula", "Jean-Paul", "O'Neil"] {
+            assert!(keeps_form(s), "{s}");
+        }
+        for s in [
+            "Tony Shalhoub",
+            "A Diva dos Pés Descalços",
+            "A Pequena Notável",
+            "S.",
+            "A.",
+            "Big Al",
+            "Fed Express",
+            "Mary Ann",
+            "",
+        ] {
+            assert!(!keeps_form(s), "{s}");
+        }
         let mut c = candidate();
         c.nicknames = vec!["Pelé".into(), "a pequena notavel".into(), "Big Al".into()];
-        assert_eq!(name_keys(&c), vec!["alan", "big al", "mathison", "pele"]);
+        assert_eq!(name_keys(&c), vec!["alan", "mathison", "pele"]);
+    }
+
+    #[test]
+    fn live_junk_strings_never_become_forms_or_the_display() {
+        let mut c = candidate();
+        c.label = "Tony Shalhoub".into();
+        c.givens = vec![
+            ("Q1".into(), "Tony Shalhoub".into()),
+            ("Q2".into(), "Anthony".into()),
+        ];
+        c.nicknames = vec![
+            "Tony Shalhoub".into(),
+            "A Diva dos Pés Descalços".into(),
+            "A Pequena Notável".into(),
+            "S.".into(),
+            "A.".into(),
+        ];
+        assert_eq!(name_keys(&c), vec!["anthony"]);
+        assert_eq!(display_name(&c), "Anthony");
+        c.label = "Pelé".into();
+        c.givens.clear();
+        c.nicknames.clear();
+        assert_eq!(name_keys(&c), vec!["pele"]);
     }
 
     #[test]
