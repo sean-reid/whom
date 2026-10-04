@@ -1,4 +1,5 @@
 use crate::families;
+use crate::run::title_case;
 use crate::store::Name;
 use crate::text::{ascii_letters, keeps_form, normalize};
 use rphonetic::DoubleMetaphone;
@@ -88,7 +89,7 @@ impl Graph {
         let (dm, rhyme) = self.codes(&key);
         let holders = self.display_holders.entry(key.clone()).or_insert(0);
         let entry = self.names.entry(key).or_insert_with(|| Name {
-            display: gn.label.trim().to_string(),
+            display: cased(gn.label.trim()),
             langs: Vec::new(),
             families: Vec::new(),
             count: 0,
@@ -100,7 +101,7 @@ impl Graph {
         });
         entry.count += gn.count;
         if label != entry.display && outranks(label, gn.count, &entry.display, *holders) {
-            entry.display = label.to_string();
+            entry.display = cased(label);
         }
         *holders = (*holders).max(gn.count);
         for l in langs {
@@ -133,6 +134,15 @@ fn outranks(label: &str, count: u64, current: &str, current_count: u64) -> bool 
     )
 }
 
+// Wikidata labels are sometimes stored lowercase; a name shows with a capital.
+fn cased(label: &str) -> String {
+    if label.chars().next().is_some_and(char::is_lowercase) {
+        title_case(label)
+    } else {
+        label.to_string()
+    }
+}
+
 impl Graph {
     pub fn ensure_form(&mut self, display: &str) {
         if !keeps_form(display) {
@@ -146,7 +156,7 @@ impl Graph {
         self.names.insert(
             key,
             Name {
-                display: display.trim().to_string(),
+                display: cased(display.trim()),
                 langs: Vec::new(),
                 families: Vec::new(),
                 count: 0,
@@ -449,5 +459,14 @@ mod tests {
         assert_eq!(g.names.len(), 1);
         assert_eq!(g.names["bobby"].count, 0);
         assert_eq!(g.names["bobby"].display, "Bobby");
+    }
+
+    #[test]
+    fn lowercase_labels_show_capitalised() {
+        assert_eq!(cased("anal"), "Anal");
+        assert_eq!(cased("makarona"), "Makarona");
+        assert_eq!(cased("HANNA"), "HANNA");
+        assert_eq!(cased("Óscar"), "Óscar");
+        assert_eq!(cased("jean-paul"), "Jean-Paul");
     }
 }
