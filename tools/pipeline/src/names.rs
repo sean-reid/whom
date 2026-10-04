@@ -1,6 +1,6 @@
 use crate::families;
 use crate::store::Name;
-use crate::text::{ascii_letters, is_name_label, normalize};
+use crate::text::{ascii_letters, keeps_form, normalize};
 use rphonetic::DoubleMetaphone;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_normalization::char::is_combining_mark;
@@ -60,7 +60,7 @@ impl Graph {
             self.unlabelled += 1;
             return;
         }
-        if !is_name_label(label) {
+        if !keeps_form(label) {
             self.rejected_labels += 1;
             return;
         }
@@ -135,7 +135,7 @@ fn outranks(label: &str, count: u64, current: &str, current_count: u64) -> bool 
 
 impl Graph {
     pub fn ensure_form(&mut self, display: &str) {
-        if !is_name_label(display.trim()) {
+        if !keeps_form(display) {
             return;
         }
         let key = normalize(display);
@@ -425,6 +425,20 @@ mod tests {
         g.add_given_name(&gn("Q6", "Péter", &[], 90));
         g.add_given_name(&gn("Q7", "Peter", &[], 80));
         assert_eq!(g.names["peter"].display, "Péter");
+    }
+
+    #[test]
+    fn multi_word_labels_never_enter_the_graph_by_any_door() {
+        let mut g = Graph::new();
+        g.add_given_name(&gn("Q1", "máximo merilio", &["Q1321"], 3));
+        g.add_given_name(&gn("Q2", "Mary Ann", &["Q1860"], 900));
+        g.add_given_name(&gn("Q3", "Máximo", &["Q1321"], 3000));
+        assert_eq!(g.rejected_labels, 2);
+        g.ensure_form("máximo merilio");
+        g.ensure_form("S.");
+        let keys: Vec<&String> = g.names.keys().collect();
+        assert_eq!(keys, ["maximo"]);
+        assert!(!g.key_of_qid.contains_key("Q1"));
     }
 
     #[test]

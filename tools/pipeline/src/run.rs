@@ -4,7 +4,7 @@ use crate::http::{Client, FetchError};
 use crate::names::Graph;
 use crate::qlever::{self, Candidate};
 use crate::store::{self, ImageInfo, Names, Person, Pool, Skip, State};
-use crate::text::{first_token, is_name_label, normalize};
+use crate::text::{first_token, is_name_label, keeps_form, normalize};
 use crate::upload;
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -369,13 +369,6 @@ pub fn display_name(c: &Candidate) -> String {
         .or_else(|| c.givens.iter().find(|(_, l)| keeps_form(l)))
         .map(|(_, l)| l.trim().to_string())
         .unwrap_or_else(|| token.to_string())
-}
-
-// A name form is one word: longer given names and nicknames are full names,
-// sobriquets, or titles, and a stored form has no record of which it was.
-pub fn keeps_form(form: &str) -> bool {
-    let form = form.trim();
-    is_name_label(form) && !form.contains('.') && form.split_whitespace().count() == 1
 }
 
 // The label's first token stands in for a given name only for mononyms; for

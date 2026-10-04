@@ -63,6 +63,13 @@ pub fn is_name_label(s: &str) -> bool {
     true
 }
 
+// A name form is one word: longer given names and nicknames are full names,
+// sobriquets, or titles, and a stored form has no record of which it was.
+pub fn keeps_form(form: &str) -> bool {
+    let form = form.trim();
+    is_name_label(form) && !form.contains('.') && form.split_whitespace().count() == 1
+}
+
 pub fn first_token(s: &str) -> Option<&str> {
     s.split_whitespace().next()
 }
