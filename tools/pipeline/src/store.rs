@@ -151,12 +151,17 @@ pub struct Name {
     pub same_as: Vec<String>,
     #[serde(rename = "shortOf")]
     pub short_of: Vec<String>,
+    pub region: Option<String>,
+    pub continent: Option<String>,
+    #[serde(rename = "regionShare")]
+    pub region_share: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Names {
     pub version: u32,
     pub languages: BTreeMap<String, String>,
+    pub regions: BTreeMap<String, String>,
     pub names: BTreeMap<String, Name>,
 }
 
@@ -286,11 +291,21 @@ mod tests {
             era: None,
             same_as: vec![],
             short_of: vec!["william".into()],
+            region: Some("northern-america".into()),
+            continent: Some("americas".into()),
+            region_share: Some(0.62),
         };
         assert_eq!(
             serde_json::to_string(&n).unwrap(),
-            r#"{"display":"Bill","langs":["Q1860"],"families":["germanic"],"count":1200,"dm":"PL","rhyme":"PL","era":null,"sameAs":[],"shortOf":["william"]}"#
+            r#"{"display":"Bill","langs":["Q1860"],"families":["germanic"],"count":1200,"dm":"PL","rhyme":"PL","era":null,"sameAs":[],"shortOf":["william"],"region":"northern-america","continent":"americas","regionShare":0.62}"#
         );
+        let mut nowhere = n.clone();
+        nowhere.region = None;
+        nowhere.continent = None;
+        nowhere.region_share = None;
+        assert!(serde_json::to_string(&nowhere)
+            .unwrap()
+            .ends_with(r#""region":null,"continent":null,"regionShare":null}"#));
         let mut with_era = n.clone();
         with_era.era = Some(1952);
         assert!(serde_json::to_string(&with_era)
