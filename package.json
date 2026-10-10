@@ -24,7 +24,7 @@
     "seed": "node scripts/seed-local.mjs"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260928.1",
+    "@cloudflare/workers-types": "^5.20261007.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.3",
