@@ -1,6 +1,6 @@
 import { MAX_GUESSES } from "../shared/api.ts";
 
-const SITE = "whom.dwainosaur.com";
+const SITE = "whom.seanre.id";
 
 export function shareLine(n: number, won: boolean, guesses: number): string {
   return `WHOM? #${n} ${won ? guesses : "X"}/${MAX_GUESSES} ${SITE}`;

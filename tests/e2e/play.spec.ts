@@ -94,7 +94,7 @@ test("plays today's puzzle through to the result", async ({ page, context }, inf
   await page.click("#share");
   await expect(page.locator("#share-done")).toHaveText("Copied");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toMatch(/^WHOM\? #\d+ \d\/8 whom\.dwainosaur\.com$/);
+  expect(copied).toMatch(/^WHOM\? #\d+ \d\/8 whom\.seanre\.id$/);
   await page.evaluate(() => {
     navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
   });
