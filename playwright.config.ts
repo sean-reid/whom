@@ -9,6 +9,7 @@ const seed = states.map((state) => `node scripts/seed-local.mjs ${state}`).join(
 const dev = (p: number, state: string) =>
   `npx wrangler dev --port ${p} --ip 127.0.0.1 ${vars} --persist-to ${state}`;
 const api = /api\.spec\.ts$/;
+const asClient = (n: number) => ({ "cf-connecting-ip": `10.0.0.${n}` });
 
 // Servers start before any setup hook, so the first one builds and seeds both local R2
 // stores. The API suite gets its own Worker so its rate-limit case never eats the budget
@@ -33,19 +34,33 @@ export default defineConfig({
         viewport: { width: 375, height: 740 },
         hasTouch: true,
         isMobile: true,
+        extraHTTPHeaders: asClient(1),
       },
     },
     {
       name: "tablet",
       testIgnore: api,
-      use: { ...devices["Desktop Chrome"], viewport: { width: 768, height: 1024 }, hasTouch: true },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 768, height: 1024 },
+        hasTouch: true,
+        extraHTTPHeaders: asClient(2),
+      },
     },
     {
       name: "desktop",
       testIgnore: api,
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 },
+        extraHTTPHeaders: asClient(3),
+      },
     },
-    { name: "api", testMatch: api, use: { baseURL: `http://127.0.0.1:${apiPort}` } },
+    {
+      name: "api",
+      testMatch: api,
+      use: { baseURL: `http://127.0.0.1:${apiPort}`, extraHTTPHeaders: asClient(4) },
+    },
   ],
   webServer: [
     {
