@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/sean-reid/whom/compare/whom-v0.3.0...whom-v0.4.0) (2026-11-26)
+
+
+### Features
+
+* serve the site from whom.seanre.id ([#66](https://github.com/sean-reid/whom/issues/66)) ([1254e55](https://github.com/sean-reid/whom/commit/1254e55c4c803d8fff809e9bb73d9e8a4e8e7124))
+
 ## [0.3.0](https://github.com/sean-reid/whom/compare/whom-v0.2.0...whom-v0.3.0) (2026-10-04)
 
 
